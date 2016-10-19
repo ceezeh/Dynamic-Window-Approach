@@ -1,0 +1,23 @@
+dt: 0.05 # seconds.
+
+# WC kinematics
+acc_lim_v: 1.2 # 0.06 original but tooooo small. Tooooo. So use 20 * 0.06
+acc_lim_w: 2.4
+decc_lim_v: -0.96
+decc_lim_w: -3
+
+MAX_LIN_VEL: 0.26 #m/s
+MIN_LIN_VEL: 0.2 #m/s
+
+MAX_ANG_VEL: 1.5 #rads/s
+MIN_ANG_VEL: 1.69 #rads/s
+
+# max_trans_vel: MIN_LIN_VEL
+# min_trans_vel: -MIN_LIN_VEL
+# max_rot_vel: MAX_ANG_VEL
+# min_rot_vel: -MIN_ANG_VEL
+
+motor_topic: "motor_command" # Topic to control wheelchair motion. Use like: command_pub = n.advertise<geometry_msgs::TwistStamped>("motor_command",   100);
+odometry_topic: "odom" #topic to get wheelchiar's velocity. Use like  odom_sub = n.subscribe("odom", 1, &SharedDWA::odomCallback, this);
+interface_topic: "user_command" # topic to send commands from interfaces like joystick. Use like    interface_sub = n.subscribe("user_command", 3,  &SharedDWA::usercommandCallback, this);
+map_topic: "local_map" # topic to get map information. Use like occupancy_sub = n.subscribe("local_map", 1, &SharedDWA::occupancyCallback, this);

@@ -1,0 +1,28 @@
+<launch>
+  <machine name="wheelchair3" address="wheelchair3" user="root" 
+    env-loader="/opt/ros/indigo/rosenv.sh" default="never" />
+
+  <machine name="mainrobot3" address="mainrobot3" user="rock" 
+    env-loader="/home/rock/catkin_ws/devel/env.sh" default="never" />
+ <!--
+  <machine name="remote3" address="remote3" user="ceezeh" 
+    env-loader="/home/ceezeh/catkin_ws/devel/env.sh" default="never" />
+  -->
+  <node pkg="sonar_node" type="sonar" name="sonar"  machine="wheelchair3" respawn="true"/>
+  
+  <node name="odometry" pkg="odometry" type="encoder_odometry.py"  respawn="true" machine="wheelchair3">    
+   </node>
+ 
+  <node pkg="map" type="local_map" name="local_map" machine="mainrobot3" output="screen" required="true" launch-prefix="gdb -ex run --args">
+  	<rosparam command="load" file="$(find map)/mymap.yaml" />
+  </node>
+   
+    
+  <node pkg="motion_controller" type="controller" name="controller"
+    output="log" machine="wheelchair3" respawn="true"/>
+
+ <node pkg="dwa" type="run_dwa" name="dwa" machine="mainrobot3"  output="screen" >
+     <rosparam command="load" file="$(find dwa)/dwa.yaml"/>
+   </node>
+  
+</launch>
