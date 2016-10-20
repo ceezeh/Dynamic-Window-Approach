@@ -62,20 +62,31 @@ struct DynamicWindow {
 class DeOscillator {
 private:
 	float upperbound, lowerbound;
+	bool front; // front = true;
 	Pose start_pose; // The pose at the start of deoscillation.
+	float velDir; // instantanouse direction of motion in the body frame.
 	static float lin_dist_thres, ang_dist_thres_lower, ang_dist_thres_upper;
+	bool first;
 public:
 	DeOscillator() {
 		upperbound = M_PI + .01;
 		lowerbound = -M_PI - .01;
 		start_pose = Pose();
+		float velDir = 0;
+		front = true;
+		first = true;
 	}
 	// This function examines if we have travelled far enough to ensure deoscillation.
 	void updateOdom(const nav_msgs::Odometry& cmd) {
 		float xt = cmd.pose.pose.position.x;
 		float yt = cmd.pose.pose.position.y;
-		float tht = atan2(cmd.twist.twist.angular.z, cmd.twist.twist.linear.x);
+		float tht = cmd.pose.pose.position.z;
 
+		if (first) {
+			start_pose = Pose(xt, yt, tht);
+			first = false;
+			return;
+		}
 		float lin_dist = sqrt(
 				pow(start_pose.x - xt, 2) + pow(start_pose.y - yt, 2));
 		float ang_dist = abs(angDiff(start_pose.th, tht));
@@ -83,16 +94,55 @@ public:
 //					&& (ang_dist < ang_dist_thres_upper)
 				)) {
 			start_pose = Pose(xt, yt, tht);
+			if (front) {
+				velDir = atan2(cmd.twist.twist.angular.z,
+						cmd.twist.twist.linear.x);
+			} else {
+				velDir = atan2(-cmd.twist.twist.angular.z,
+						cmd.twist.twist.linear.x);
+			}
 			cout << "NEW DIRECTION" << endl;
 		}
 
 	}
 
 	void getAdmissibleDirection(float& upperbound, float& lowerbound) {
-		upperbound = start_pose.th+ M_PI * 60 / 180;
+		cout << "velDir" << velDir << endl;
+		upperbound = velDir + M_PI * 60 / 180;
 		upperbound = wraparound(upperbound);
-		lowerbound = start_pose.th - M_PI * 60 / 180;
+		lowerbound = velDir - M_PI * 60 / 180;
 		lowerbound = wraparound(lowerbound);
 	}
-};
+
+	// This is called only once anytime the goal pose changes.s
+	void changeDir(Pose currPose, Pose goalPose) {
+		float bearing = currPose.bearingToPose(goalPose);
+		float trueBearing = angDiff(currPose.th, bearing);
+		bool frontt = true;
+		if (fabs(trueBearing) <= M_PI / 2) {
+			frontt = true;
+		} else {
+			frontt = false;
+		}
+
+		cout << "Computing dir.... bearingToGoal: " << bearing
+				<< ", true bearing" << trueBearing << endl;
+
+		if (frontt) {
+			velDir = 0;
+		} else {
+			velDir = M_PI;
+		}
+
+		if (front != front) {
+			cout << "CHANGE DIRECTION, dir =" << frontt << " !!!" << endl;
+		}
+		front = frontt;
+	}
+
+	bool isFront() const {
+		return front;
+	}
+}
+;
 #endif

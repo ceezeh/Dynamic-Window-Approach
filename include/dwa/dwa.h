@@ -44,7 +44,7 @@ private:
 	 */
 	float refresh_period; // rate at which we evaluate prediction as measures in counts representing time in seconds
 	MapContainerPtr dwa_map;
-
+	Pose goalPose;
 //----------------- Motor Variables ---------------
 	Speed odom;
 	nav_msgs::Odometry odom_all;
@@ -88,7 +88,7 @@ private:
 	float computeVelocity(Speed candidateSpeed);
 	vector<Speed> getAdmissibleVelocities(vector<Speed> admissibles, float upperbound, float lowerbound);
 	DynamicWindow computeDynamicWindow(DynamicWindow dw);
-	vector<Speed> getResultantVelocities(vector<Speed> resultantVelocities, float upperbound, float lowerbound );
+	vector<Speed> getResultantVelocities(vector<Speed> resultantVelocities, float upperbound, float lowerbound);
 	Speed computeNextVelocity(Speed chosenSpeed);
 	DeOscillator deOscillator;
 	void restrictVelocitySpace(float &upperbound, float &lowerbound,

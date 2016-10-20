@@ -25,6 +25,7 @@ using namespace std::chrono;
 int dataflag = 0;
 
 DWA::DWA(const char * topic, ros::NodeHandle &n_t) {
+	this->goalPose = Pose(10, 0);
 	// Trajectories.
 	for (float i = -M_PI; i < M_PI; i += 0.5235987756) { // Split into 12 angles  for each quadrant.
 		trajectories.push_back(i);
@@ -63,6 +64,7 @@ DWA::DWA(const char * topic, ros::NodeHandle &n_t) {
 	dwa_map = MapContainerPtr(new MapContainer(gridsize, mapsize));
 
 	deOscillator = DeOscillator();
+	deOscillator.changeDir(Pose(0,0),goalPose);
 	// ROS
 	n = n_t;
 	command_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
@@ -110,15 +112,15 @@ void DWA::occupancyCallback(const nav_msgs::OccupancyGrid& og) {
 	dataflag |= (1 << MAP_BIT);
 	this->dwa_map->updateMap(og);
 
-	for (int i = 0; i < this->dwa_map->getNoOfGrids(); i++) {
-		for (int j = 0; j < this->dwa_map->getNoOfGrids(); j++) {
-			int val = this->dwa_map->at(i, j);
-			if (val != 0) {
-				cout << "(" << i << "," << j << "), ";
-			}
-		}
-	}
-	cout << endl;
+//	for (int i = 0; i < this->dwa_map->getNoOfGrids(); i++) {
+//		for (int j = 0; j < this->dwa_map->getNoOfGrids(); j++) {
+//			int val = this->dwa_map->at(i, j);
+//			if (val != 0) {
+//				cout << "(" << i << "," << j << "), ";
+//			}
+//		}
+//	}
+//	cout << endl;
 }
 
 /*
@@ -137,6 +139,7 @@ float DWA::computeHeading(Speed candidateSpeed, Pose goal) {
 	// Normalise user's speed first.
 	float x, y, th;
 	x = y = th = 0;
+
 	// Here we are assuming the robot will use this speed for the next few time steps. // This could be because of latency
 	for (int i = 0; i < 10; i++) {
 
@@ -166,16 +169,20 @@ float DWA::computeHeading(Speed candidateSpeed, Pose goal) {
 		}
 		prevSpeed = nextSpeed;
 
-
-
 	}
 	Pose currentpose = Pose(odom_all.pose.pose.position.x,
 			odom_all.pose.pose.position.y, odom_all.pose.pose.position.z);
 	Pose endPose = currentpose + Pose(x, y, th);
 
 	float bearingToGoal = endPose.bearingToPose(goal);
-	float heading = M_PI - angDiff(bearingToGoal, endPose.th);
-	/*
+	bool front = this->deOscillator.isFront();
+	float heading;
+	if (front) {
+		heading = M_PI - angDiff(bearingToGoal, endPose.th);
+	} else {
+		heading = - angDiff(bearingToGoal, endPose.th);
+	}
+		/*
 	 * normalise the test speed as well.
 	 * Here we are asking what speed would closely match the user's
 	 * intention given his joystick angle of deflection.
@@ -230,6 +237,7 @@ float DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 	x = y = th = 0;
 	float clearance = 2.55; // 2.55m is maximum detectable distance by sonar
 	int count = refresh_period; // we want 2 seconds = 2/dt counts
+
 	for (int i = 0; i < horizon; i++) {
 		x += candidateSpeed.v * cos(th) * dt;
 		y += candidateSpeed.v * sin(th) * dt;
@@ -388,10 +396,23 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 	admissibles.clear();
 	admissibles = getAdmissibleVelocities(admissibles, upperbound, lowerbound);
 
+	bool front = deOscillator.isFront();
+	// Check direction of goal is in front or behind.
 	bool zeroVisited = false; // ensures that we add v=w= 0 only once.
 	for (int i = 0; i < trajectories.size(); i++) {
-		if (trajectories[i] < -M_PI / 2 || trajectories[i] > M_PI / 2) {
-			continue;
+
+		if (front) {
+			if (fabs(trajectories[i]) > M_PI / 2) {
+				continue;
+			}
+		} else {
+			if (fabs(trajectories[i]) < M_PI / 2) {
+				continue;
+			}
+		}
+		if (!zeroVisited) {
+			resultantVelocities.emplace_back(0, 0);
+			zeroVisited = true;
 		}
 		cout << "Trajectory Heading : " << trajectories[i] << endl;
 //		if ((angDiff(trajectories[i], upperbound) > 0)
@@ -537,34 +558,34 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 	return resultantVelocities;
 }
 
-void DWA::restrictVelocitySpace(float &upperbound, float &lowerbound,
-		Speed input) {
-	float upperboundt, lowerboundt;
-	deOscillator.getAdmissibleDirection(upperbound, lowerbound);
-	float ang = atan2(input.w, input.v);
-
-	upperboundt = ang + M_PI * 60 / 180;
-	upperboundt = wraparound(upperboundt);
-	lowerboundt = ang - M_PI * 60 / 180;
-	lowerboundt = wraparound(lowerboundt);
-
-	float upper, lower;
-//	upper = upperboundt;
-//	lower = lowerboundt;
+//void DWA::restrictVelocitySpace(float &upperbound, float &lowerbound,
+//		Speed input) {
+//	float upperboundt, lowerboundt;
+//	deOscillator.getAdmissibleDirection(upperbound, lowerbound);
+//	float ang = atan2(input.w, input.v);
 //
-	if (isAngleInRegion(upperboundt, upperbound, lowerbound)) {
-		upper = upperboundt;
-	} else {
-		upper = upperbound;
-	}
-	if (isAngleInRegion(lowerboundt, upperbound, lowerbound)) {
-		lower = lowerboundt;
-	} else {
-		lower = lowerbound;
-	}
-	upperbound = upper;
-	lowerbound = lower;
-}
+//	upperboundt = ang + M_PI * 60 / 180;
+//	upperboundt = wraparound(upperboundt);
+//	lowerboundt = ang - M_PI * 60 / 180;
+//	lowerboundt = wraparound(lowerboundt);
+//
+//	float upper, lower;
+////	upper = upperboundt;
+////	lower = lowerboundt;
+////
+//	if (isAngleInRegion(upperboundt, upperbound, lowerbound)) {
+//		upper = upperboundt;
+//	} else {
+//		upper = upperbound;
+//	}
+//	if (isAngleInRegion(lowerboundt, upperbound, lowerbound)) {
+//		lower = lowerboundt;
+//	} else {
+//		lower = lowerbound;
+//	}
+//	upperbound = upper;
+//	lowerbound = lower;
+//}
 
 /*
  * This is the part that does the probabilistic conditioning based on the user's input.
@@ -582,7 +603,7 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 	/*
 	 * Create optimized search space.
 	 */
-	Pose goalPose = Pose(10, 0);
+
 
 	// Convert to body angle.
 //	float dir = -odom_all.pose.pose.position.z;
@@ -590,6 +611,7 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 //	Speed goal = Speed(v,v * tan(dir));
 	float upperbound = -M_PI - 1;
 	float lowerbound = M_PI + 1;
+
 
 //	restrictVelocitySpace(upperbound, lowerbound, goal);
 	deOscillator.getAdmissibleDirection(upperbound, lowerbound);
