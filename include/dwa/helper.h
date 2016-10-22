@@ -18,7 +18,7 @@
 #include "dwa/speed.h"
 
 #define NULL_POSE Pose(0,0,0)
-
+#define INVALID_DIR -12
 using namespace std;
 
 float vectorNorm(Pose p);
@@ -72,7 +72,7 @@ public:
 		upperbound = M_PI + .01;
 		lowerbound = -M_PI - .01;
 		start_pose = Pose();
-		float velDir = 0;
+		velDir = 0;
 		front = true;
 		first = true;
 	}
@@ -114,30 +114,38 @@ public:
 		lowerbound = wraparound(lowerbound);
 	}
 
-	// This is called only once anytime the goal pose changes.s
-	void changeDir(Pose currPose, Pose goalPose) {
+	// This is called only once anytime the goal pose changes.
+	void changeDir(Pose currPose, Pose goalPose, float dir= INVALID_DIR) {
 		float bearing = currPose.bearingToPose(goalPose);
 		float trueBearing = angDiff(currPose.th, bearing);
-		bool frontt = true;
-		if (fabs(trueBearing) <= M_PI / 2) {
-			frontt = true;
-		} else {
-			frontt = false;
+		bool front_t = true;
+		if (fabs(trueBearing) > M_PI / 2) {
+			front_t = false;
 		}
 
 		cout << "Computing dir.... bearingToGoal: " << bearing
-				<< ", true bearing" << trueBearing << endl;
-
-		if (frontt) {
-			velDir = 0;
+				<< ", true bearing: " << trueBearing << ". current th: "<<currPose.th<<endl;
+		if (dir != INVALID_DIR) {
+			velDir = dir;
+		}
+		if (front ^ front_t) {
+			// Useful when DWA is used and complex update of velDir is not required.
+			// This is because DWA only takes one goal and does not change its goal.
+			if (dir == INVALID_DIR) {
+				if (front_t) {
+					velDir = 0;
+				} else {
+					velDir = M_PI;
+				}
+			}
+			front = front_t;
+			cout << "CHANGING DIRECTION, isFront= " << front << ". Veldir: "
+					<< velDir << " !!!" << endl;
 		} else {
-			velDir = M_PI;
+			cout << "New goal but direction Remains the same. isFront= "
+					<< front << ". Veldir: " << velDir << endl;
 		}
 
-		if (front != front) {
-			cout << "CHANGE DIRECTION, dir =" << frontt << " !!!" << endl;
-		}
-		front = frontt;
 	}
 
 	bool isFront() const {

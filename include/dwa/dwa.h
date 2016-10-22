@@ -11,6 +11,7 @@
 #include "ros/ros.h"
 #include "std_msgs/String.h"
 #include "geometry_msgs/TwistStamped.h"
+#include "geometry_msgs/Pose.h"
 #include "nav_msgs/OccupancyGrid.h"
 #include "nav_msgs/Odometry.h"
 #include <unistd.h>
@@ -27,15 +28,25 @@
 #define INVALIDCMD -2
 using namespace std;
 
-
 class DWA {
 public:
 	DWA(const char * topic, ros::NodeHandle &n_t);
 //	~DWA();
 	void run();
+
+
+
+protected:
+	ros::NodeHandle n;
+	float dt;
+	nav_msgs::Odometry odom_all;
+	const Pose& getGoalPose() const {
+			return goalPose;
+		}
+
+	int DATA_COMPLETE;
 private:
 
-	vector<Speed> inputDist;
 	// -----------Occupancy Grid Variables-------------------
 	/*
 	 * The goalstep is a measure used for our distribution to
@@ -47,19 +58,18 @@ private:
 	Pose goalPose;
 //----------------- Motor Variables ---------------
 	Speed odom;
-	nav_msgs::Odometry odom_all;
+
 //-------------------ROS-----------------------
-	ros::NodeHandle n;
+
 	ros::Publisher command_pub;
 
 	ros::Subscriber odom_sub;
 	ros::Subscriber occupancy_sub;
-
-	float dt;
+	ros::Subscriber goalPose_sub;
 
 	void occupancyCallback(const nav_msgs::OccupancyGrid& og);
 	void odomCallback(const nav_msgs::Odometry& cmd);
-
+	void goalPoseCallback(const geometry_msgs::Pose& p);
 // ----------------------WC Kinematics------------------------
 	float acc_lim_v, acc_lim_w;
 	float decc_lim_v, decc_lim_w;
@@ -79,21 +89,28 @@ private:
 	 * argand chart are stored as trajectory parameters.
 	 */
 	vector<float> trajectories;
+	float computeDistToNearestObstacle(Speed candidateSpeed);
+	vector<Speed> getAdmissibleVelocities(vector<Speed> admissibles,
+			float upperbound, float lowerbound);
+	DynamicWindow computeDynamicWindow(DynamicWindow dw);
+
 // Assuming const time horizon as goal.
+protected:
 	float horizon; // time steps in the future.
 	float computeHeading(Speed candidateSpeed, Pose goal);
 	float computeClearance(Speed candidateSpeed);
-	float computeDistToNearestObstacle(Speed candidateSpeed);
+
 	bool onObstacle(Pose pose);
 	float computeVelocity(Speed candidateSpeed);
-	vector<Speed> getAdmissibleVelocities(vector<Speed> admissibles, float upperbound, float lowerbound);
-	DynamicWindow computeDynamicWindow(DynamicWindow dw);
-	vector<Speed> getResultantVelocities(vector<Speed> resultantVelocities, float upperbound, float lowerbound);
-	Speed computeNextVelocity(Speed chosenSpeed);
+	virtual void getData();
+	vector<Speed> getResultantVelocities(vector<Speed> resultantVelocities,
+			float upperbound, float lowerbound);
+	virtual Speed computeNextVelocity(Speed chosenSpeed);
 	DeOscillator deOscillator;
 	void restrictVelocitySpace(float &upperbound, float &lowerbound,
 			Speed inputcmd);
-	void getData();
+
+	void updateGoalPose(Pose goal,float dir=INVALID_DIR);
 
 }
 ;

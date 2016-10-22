@@ -105,9 +105,9 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES dwa
-#  CATKIN_DEPENDS geometry_msgs nav_msgs std_msgs
+  INCLUDE_DIRS include
+  LIBRARIES dwa
+  CATKIN_DEPENDS geometry_msgs nav_msgs std_msgs
 #  DEPENDS system_lib
 )
 
@@ -194,10 +194,10 @@ include_directories(
 include_directories(include ${catkin_INCLUDE_DIRS} ${maphelper_INCLUDE_DIRS})
 
 add_library(dwa src/helper.cpp src/dwa.cpp)
-target_link_libraries(dwa LINK_PUBLIC ${catkin_LIBRARIES} ${maphelper_LIBRARIES})
+target_link_libraries(dwa ${catkin_LIBRARIES} ${maphelper_LIBRARIES})
 
 add_executable(run_dwa src/main.cpp)
-target_link_libraries(run_dwa LINK_PUBLIC ${catkin_LIBRARIES} dwa )
+target_link_libraries(run_dwa dwa )
 
 install(TARGETS dwa
 	ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

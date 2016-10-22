@@ -1,6 +1,7 @@
 #include "ros/ros.h"
 #include "geometry_msgs/TwistStamped.h"
 #include "geometry_msgs/Twist.h"
+#include "geometry_msgs/Pose.h"
 #include "nav_msgs/OccupancyGrid.h"
 #include "nav_msgs/Odometry.h"
 #include "tf/transform_datatypes.h"
@@ -66,6 +67,7 @@ DWA::DWA(const char * topic, ros::NodeHandle &n_t) {
 	deOscillator = DeOscillator();
 	deOscillator.changeDir(Pose(0,0),goalPose);
 	// ROS
+	DATA_COMPLETE = 3;
 	n = n_t;
 	command_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
 
@@ -73,6 +75,7 @@ DWA::DWA(const char * topic, ros::NodeHandle &n_t) {
 
 	occupancy_sub = n.subscribe("local_map", 1, &DWA::occupancyCallback, this);
 
+	goalPose_sub = n.subscribe("goalpose", 1, &DWA::goalPoseCallback, this);
 	dataflag = 0;
 
 }
@@ -122,7 +125,15 @@ void DWA::occupancyCallback(const nav_msgs::OccupancyGrid& og) {
 //	}
 //	cout << endl;
 }
-
+void DWA::goalPoseCallback(const geometry_msgs::Pose& p) {
+	tf::Quaternion q;
+		tf::quaternionMsgToTF(p.orientation, q);
+		tf::Matrix3x3 m(q);
+		double roll, pitch, yaw;
+		m.getRPY(roll, pitch, yaw);
+	Pose goal = Pose(p.position.x, p.position.y, yaw);
+	updateGoalPose(goal);
+}
 /*
  * Heading is defined in the first paper on DWA
  * as the bearing of the robot���s direction from the goal,
@@ -665,12 +676,21 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 }
 
 void DWA::getData() {
-	while (dataflag != 3 && ros::ok()) { // Data bits are arranged n order of testing priority.
+	while (dataflag != this->DATA_COMPLETE && ros::ok()) { // Data bits are arranged n order of testing priority.
 		ros::spinOnce();
 
 	}
 	dataflag = 0;
 
+}
+
+void DWA::updateGoalPose(Pose goal, float dir) {
+	if (!(goal == goalPose)) {
+		Pose currentPose = Pose(odom_all.pose.pose.position.x,
+						odom_all.pose.pose.position.y, odom_all.pose.pose.position.z);
+		this->deOscillator.changeDir(currentPose, goal, dir);
+		goalPose = goal;
+	}
 }
 
 void DWA::run() {
@@ -684,7 +704,7 @@ void DWA::run() {
 	while (ros::ok()) {
 		timer.start();
 		getData();
-		chosenSpeed = computeNextVelocity(chosenSpeed);
+		chosenSpeed = this->computeNextVelocity(chosenSpeed);
 		timer.stop();
 
 		geometry_msgs::Twist motorcmd;
