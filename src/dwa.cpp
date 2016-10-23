@@ -23,7 +23,7 @@
 using namespace std;
 using namespace std::chrono;
 
-int dataflag = 0;
+
 
 DWA::DWA(const char * topic, ros::NodeHandle &n_t) {
 	this->goalPose = Pose(10, 0);
@@ -232,11 +232,7 @@ float DWA::computeClearance(Speed candidateSpeed) {
 	ROS_INFO("Pre clearance: %f", x);
 #endif
 
-	float thres = 0.1;
-//	if (odom.v<0.1 || fabs(odom.w)<0.7) {
-//		thres = 0.02;
-//	}
-	x = (x < thres) ? 0 : x / 2.550;
+	x = (x < SAFEZONE) ? 0 : x / 2.550;
 	return x;
 
 }
@@ -370,15 +366,16 @@ vector<Speed> DWA::getAdmissibleVelocities(vector<Speed> admissibles,
 		}
 		Speed trajectory;
 		if ((trajectories[i] < M_PI / 2) && ((trajectories[i] >= -M_PI / 2))) { // +ve v space
-			trajectory.v = 0.1 * max_trans_vel;
+			trajectory.v =  max_trans_vel;
 		} else {
-			trajectory.v = 0.1 * min_trans_vel;
+			trajectory.v = min_trans_vel;
 		}
 
 		// need to convert velocities from normalised to real values.
 		trajectory.w = trajectory.v * tan(trajectories[i]);
 
 		float dist = computeDistToNearestObstacle(trajectory);
+		dist = (dist<SAFEZONE)? 0 : dist;
 		float va = copysign(sqrt(fabs(2 * .6 * dist * decc_lim_v)),
 				trajectory.v);
 		// Here we are simply getting the velocity restriction for each trajectory.
@@ -411,7 +408,7 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 	// Check direction of goal is in front or behind.
 	bool zeroVisited = false; // ensures that we add v=w= 0 only once.
 	for (int i = 0; i < trajectories.size(); i++) {
-
+		cout << "ADMISSIBLE traj: [v="<<admissibles[i].v<<",w=" <<admissibles[i].w<<"]"<<endl;
 		if (front) {
 			if (fabs(trajectories[i]) > M_PI / 2) {
 				continue;
@@ -423,6 +420,7 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 		}
 		if (!zeroVisited) {
 			resultantVelocities.emplace_back(0, 0);
+			cout << "Resultant traj: [v="<<0<<",w=" <<0<<endl;
 			zeroVisited = true;
 		}
 		cout << "Trajectory Heading : " << trajectories[i] << endl;
@@ -467,7 +465,7 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 					if (isAngleInRegion(atan2(w, vel), upperbound,
 							lowerbound)) {
 						resultantVelocities.emplace_back(vel, w);
-
+						cout << "Resultant traj: [v="<<vel<<",w=" <<w<<endl;
 					}
 				}
 			}
@@ -511,6 +509,7 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 				}
 				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound))
 					resultantVelocities.emplace_back(vel, w);
+				cout << "Resultant traj: [v="<<vel<<",w=" <<w<<endl;
 			}
 			continue;
 		}
@@ -554,6 +553,7 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 				}
 				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound))
 					resultantVelocities.emplace_back(vel, w);
+				cout << "Resultant traj: [v="<<vel<<",w=" <<w<<endl;
 			}
 
 		}
@@ -630,7 +630,6 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 	resultantVelocities = getResultantVelocities(resultantVelocities,
 			upperbound, lowerbound);
 	float maxCost = 0;
-	float a = .1; // agreement factor between user command and resultant velocity. More means less agreement.
 	// Put weightings here.
 	float alpha = 0.5;	// For heading.
 	float beta = 0.4;	// For clearance.
@@ -641,11 +640,6 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 	for (int i = 0; i < resultantVelocities.size(); i++) {
 
 		Speed realspeed = resultantVelocities[i];
-//#ifndef	SIM_ON
-//		const Speed realinput = (const Speed) (getRealSpeed(goal));
-//#else
-//		const Speed realinput = goal;
-//#endif
 		float heading = computeHeading(realspeed, goalPose);
 		float clearance = computeClearance(realspeed);
 

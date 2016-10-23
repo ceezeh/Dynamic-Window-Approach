@@ -26,12 +26,12 @@
 #include "dwa/map.h"
 #include <map/mapcontainer.h>
 #define INVALIDCMD -2
+#define SAFEZONE .1 // This defines the safezone for DWA within which clearance is always zero.
 using namespace std;
 
 class DWA {
 public:
 	DWA(const char * topic, ros::NodeHandle &n_t);
-//	~DWA();
 	void run();
 
 
@@ -45,6 +45,7 @@ protected:
 		}
 
 	int DATA_COMPLETE;
+	int dataflag;
 private:
 
 	// -----------Occupancy Grid Variables-------------------
