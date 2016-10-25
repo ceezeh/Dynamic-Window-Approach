@@ -25,6 +25,7 @@
 #include "dwa/helper.h"
 #include "dwa/map.h"
 #include <map/mapcontainer.h>
+#include <string>
 #define INVALIDCMD -2
 #define SAFEZONE .1 // This defines the safezone for DWA within which clearance is always zero.
 using namespace std;
@@ -46,6 +47,7 @@ protected:
 
 	int DATA_COMPLETE;
 	int dataflag;
+	string topic; // Namespace for yaml variables.
 private:
 
 	// -----------Occupancy Grid Variables-------------------

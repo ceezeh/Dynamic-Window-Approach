@@ -25,7 +25,7 @@ using namespace std::chrono;
 
 
 
-DWA::DWA(const char * topic, ros::NodeHandle &n_t) {
+DWA::DWA(const char * topic_t, ros::NodeHandle &n_t):topic(topic_t) {
 	this->goalPose = Pose(10, 0);
 	// Trajectories.
 	for (float i = -M_PI; i < M_PI; i += 0.5235987756) { // Split into 12 angles  for each quadrant.
@@ -164,26 +164,29 @@ float DWA::computeHeading(Speed candidateSpeed, Pose goal) {
 	nextSpeed.v -= copysign(decc_lim_v, nextSpeed.v) * dt;
 	nextSpeed.w -= copysign(decc_lim_w, nextSpeed.w) * dt;
 	// Now exert maximum deceleration.
-	while ((abs(nextSpeed.v) < abs(prevSpeed.v))
-			|| (abs(nextSpeed.w) < abs(prevSpeed.w))) {
-		if (abs(nextSpeed.v) < abs(prevSpeed.v)) {
+	while ((fabs(nextSpeed.v) < fabs(prevSpeed.v))
+			|| (fabs(nextSpeed.w) < fabs(prevSpeed.w))) {
+		if (fabs(nextSpeed.v) < fabs(prevSpeed.v)) {
 			x += nextSpeed.v * cos(th) * dt;
 			y += nextSpeed.v * sin(th) * dt;
 			prevSpeed.v = nextSpeed.v;
 			nextSpeed.v -= copysign(decc_lim_v, nextSpeed.v) * dt;
 		}
-		if (abs(nextSpeed.w) < abs(prevSpeed.w)) {
+		if (fabs(nextSpeed.w) < fabs(prevSpeed.w)) {
 			th += nextSpeed.w * dt;
 			th = wraparound(th);
 			prevSpeed.w = nextSpeed.w;
 			nextSpeed.w -= copysign(decc_lim_w, nextSpeed.w) * dt;
 		}
-		prevSpeed = nextSpeed;
 
 	}
 	Pose currentpose = Pose(odom_all.pose.pose.position.x,
 			odom_all.pose.pose.position.y, odom_all.pose.pose.position.z);
-	Pose endPose = currentpose + Pose(x, y, th);
+
+	float xt = cos(currentpose.th)*x -sin(currentpose.th)*y;
+			float yt = sin(currentpose.th)*x + cos(currentpose.th)*y;
+
+	Pose endPose = currentpose + Pose(xt, yt, th);
 
 	float bearingToGoal = endPose.bearingToPose(goal);
 	bool front = this->deOscillator.isFront();
