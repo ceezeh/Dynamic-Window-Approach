@@ -93,6 +93,7 @@ private:
 	 */
 	vector<float> trajectories;
 	float computeDistToNearestObstacle(Speed candidateSpeed);
+	float computeDistToNearestObstacle(Speed candidateSpeed, int &timestep);
 	vector<Speed> getAdmissibleVelocities(vector<Speed> admissibles,
 			float upperbound, float lowerbound);
 	DynamicWindow computeDynamicWindow(DynamicWindow dw);

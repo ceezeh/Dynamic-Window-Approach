@@ -119,7 +119,7 @@ public:
 		float bearing = currPose.bearingToPose(goalPose);
 		float trueBearing = angDiff(currPose.th, bearing);
 		bool front_t = true;
-		if (fabs(trueBearing) > M_PI / 2) {
+		if (fabs(trueBearing) > (M_PI / 2 +1)) {
 			front_t = false;
 		}
 

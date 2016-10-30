@@ -23,9 +23,8 @@
 using namespace std;
 using namespace std::chrono;
 
-
-
-DWA::DWA(const char * topic_t, ros::NodeHandle &n_t):topic(topic_t) {
+DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
+		topic(topic_t) {
 	this->goalPose = Pose(10, 0);
 	// Trajectories.
 	for (float i = -M_PI; i < M_PI; i += 0.5235987756) { // Split into 12 angles  for each quadrant.
@@ -65,7 +64,7 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t):topic(topic_t) {
 	dwa_map = MapContainerPtr(new MapContainer(gridsize, mapsize));
 
 	deOscillator = DeOscillator();
-	deOscillator.changeDir(Pose(0,0),goalPose);
+	deOscillator.changeDir(Pose(0, 0), goalPose);
 	// ROS
 	DATA_COMPLETE = 3;
 	n = n_t;
@@ -127,10 +126,10 @@ void DWA::occupancyCallback(const nav_msgs::OccupancyGrid& og) {
 }
 void DWA::goalPoseCallback(const geometry_msgs::Pose& p) {
 	tf::Quaternion q;
-		tf::quaternionMsgToTF(p.orientation, q);
-		tf::Matrix3x3 m(q);
-		double roll, pitch, yaw;
-		m.getRPY(roll, pitch, yaw);
+	tf::quaternionMsgToTF(p.orientation, q);
+	tf::Matrix3x3 m(q);
+	double roll, pitch, yaw;
+	m.getRPY(roll, pitch, yaw);
 	Pose goal = Pose(p.position.x, p.position.y, yaw);
 	updateGoalPose(goal);
 }
@@ -183,8 +182,8 @@ float DWA::computeHeading(Speed candidateSpeed, Pose goal) {
 	Pose currentpose = Pose(odom_all.pose.pose.position.x,
 			odom_all.pose.pose.position.y, odom_all.pose.pose.position.z);
 
-	float xt = cos(currentpose.th)*x -sin(currentpose.th)*y;
-			float yt = sin(currentpose.th)*x + cos(currentpose.th)*y;
+	float xt = cos(currentpose.th) * x - sin(currentpose.th) * y;
+	float yt = sin(currentpose.th) * x + cos(currentpose.th) * y;
 
 	Pose endPose = currentpose + Pose(xt, yt, th);
 
@@ -194,9 +193,9 @@ float DWA::computeHeading(Speed candidateSpeed, Pose goal) {
 	if (front) {
 		heading = M_PI - angDiff(bearingToGoal, endPose.th);
 	} else {
-		heading = - angDiff(bearingToGoal, endPose.th);
+		heading = -angDiff(bearingToGoal, endPose.th);
 	}
-		/*
+	/*
 	 * normalise the test speed as well.
 	 * Here we are asking what speed would closely match the user's
 	 * intention given his joystick angle of deflection.
@@ -239,8 +238,12 @@ float DWA::computeClearance(Speed candidateSpeed) {
 	return x;
 
 }
-
 float DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
+	int timestep = 0;
+	return computeDistToNearestObstacle(candidateSpeed, timestep);
+
+}
+float DWA::computeDistToNearestObstacle(Speed candidateSpeed, int &timestep) {
 	// Compute rectangular dimension depicting wheelchair in  occupancy map.
 	// Compute and normalize clearance.
 	float x, y, th;
@@ -253,6 +256,7 @@ float DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 		y += candidateSpeed.v * sin(th) * dt;
 		th += candidateSpeed.w * dt;
 		th = wraparound(th);
+		timestep = i;
 		if ((fabs(x / dwa_map->getResolution()) > dwa_map->getNoOfGrids() / 2)
 				|| (fabs(y / dwa_map->getResolution())
 						> dwa_map->getNoOfGrids() / 2)) {
@@ -272,6 +276,7 @@ float DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 			}
 		}
 	}
+
 	return clearance;
 }
 
@@ -365,11 +370,13 @@ vector<Speed> DWA::getAdmissibleVelocities(vector<Speed> admissibles,
 
 		if (!isAngleInRegion(trajectories[i], upperbound, lowerbound)) {
 			admissibles.emplace_back(0, 0); // This is because the list of admissibles must match with the list of trajectories.
+			cout << "Emplaced admissible zero for traj: " << trajectories[i]
+					<< endl;
 			continue;
 		}
 		Speed trajectory;
 		if ((trajectories[i] < M_PI / 2) && ((trajectories[i] >= -M_PI / 2))) { // +ve v space
-			trajectory.v =  max_trans_vel;
+			trajectory.v = max_trans_vel;
 		} else {
 			trajectory.v = min_trans_vel;
 		}
@@ -377,10 +384,12 @@ vector<Speed> DWA::getAdmissibleVelocities(vector<Speed> admissibles,
 		// need to convert velocities from normalised to real values.
 		trajectory.w = trajectory.v * tan(trajectories[i]);
 
-		float dist = computeDistToNearestObstacle(trajectory);
-		dist = (dist<SAFEZONE)? 0 : dist;
-		float va = copysign(sqrt(fabs(2 * .6 * dist * decc_lim_v)),
-				trajectory.v);
+		int timestep = -1; // Accounts for latency problems.
+		float dist = computeDistToNearestObstacle(trajectory, timestep);
+		cout << "@@@@@@@Timestep: " << timestep << endl;
+		dist = ((dist < SAFEZONE) || (timestep < 5)) ? 0 : dist;
+
+		float va = copysign(sqrt(fabs(2 * dist * decc_lim_v)), trajectory.v);
 		// Here we are simply getting the velocity restriction for each trajectory.
 		// In this case, wa is bound to va so a slight deviation from the paper's wa calculation.
 		float wa = va * tan(trajectories[i]);
@@ -411,26 +420,27 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 	// Check direction of goal is in front or behind.
 	bool zeroVisited = false; // ensures that we add v=w= 0 only once.
 	for (int i = 0; i < trajectories.size(); i++) {
-		cout << "ADMISSIBLE traj: [v="<<admissibles[i].v<<",w=" <<admissibles[i].w<<"]"<<endl;
+		cout << "ADMISSIBLE traj" << trajectories[i] << " : [v="
+				<< admissibles[i].v << ",w=" << admissibles[i].w << "]" << endl;
+		cout << "DW lowerbound traj: [v=" << dw.lowerbound.v << ",w="
+				<< dw.lowerbound.w << "]" << endl;
+		cout << "DW upperbound traj: [v=" << dw.upperbound.v << ",w="
+				<< dw.upperbound.w << "]" << endl;
 		if (front) {
-			if (fabs(trajectories[i]) > M_PI / 2) {
+			if (fabs(trajectories[i]) > (M_PI / 2 + .1)) {
 				continue;
 			}
 		} else {
-			if (fabs(trajectories[i]) < M_PI / 2) {
+			if (fabs(trajectories[i]) < (M_PI / 2 + .1)) {
 				continue;
 			}
 		}
 		if (!zeroVisited) {
 			resultantVelocities.emplace_back(0, 0);
-			cout << "Resultant traj: [v="<<0<<",w=" <<0<<endl;
+			cout << "Resultant traj: [v=" << 0 << ",w=" << 0 << endl;
 			zeroVisited = true;
 		}
-		cout << "Trajectory Heading : " << trajectories[i] << endl;
-//		if ((angDiff(trajectories[i], upperbound) > 0)
-//				|| (angDiff(trajectories[i], lowerbound) < 0)) {
-//			continue;
-//		}
+//		cout << "Trajectory Heading : " << trajectories[i] << endl;
 		if (!isAngleInRegion(trajectories[i], upperbound, lowerbound))
 			continue;
 		cout << "Passed trajectory Heading : " << trajectories[i] << endl;
@@ -440,14 +450,14 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 			float vel = 0;
 			float upperbound_w, lowerbound_w;
 			if (equals(trajectories[i], M_PI / 2)) {
-				upperbound_w = dw.upperbound.w;
+				upperbound_w = fmin(dw.upperbound.w, admissibles[i].w);
 				lowerbound_w = (dw.lowerbound.w < 0) ? 0 : dw.lowerbound.w;
 			} else {
 				upperbound_w = (dw.upperbound.w > 0) ? 0 : dw.upperbound.w;
-				lowerbound_w = dw.lowerbound.w;
+				lowerbound_w = fmax(dw.lowerbound.w, admissibles[i].w);
 			}
-			upperbound_w = min(upperbound_w, max_rot_vel);
-			lowerbound_w = max(lowerbound_w, min_rot_vel);
+			upperbound_w = fmin(upperbound_w, max_rot_vel);
+			lowerbound_w = fmax(lowerbound_w, min_rot_vel);
 			float stepw = (upperbound_w - lowerbound_w) / 6;
 			if (stepw == 0)
 				continue;
@@ -468,7 +478,8 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 					if (isAngleInRegion(atan2(w, vel), upperbound,
 							lowerbound)) {
 						resultantVelocities.emplace_back(vel, w);
-						cout << "Resultant traj: [v="<<vel<<",w=" <<w<<endl;
+						cout << "Resultant traj: [v=" << vel << ",w=" << w
+								<< endl;
 					}
 				}
 			}
@@ -478,20 +489,21 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 		// For small tan near zero, w = 0
 
 		if (abs(tan(trajectories[i])) < 0.001) {
+
 			float w = 0;
 			float lowerbound_v, upperbound_v;
 			if ((trajectories[i] < M_PI / 2)
 					&& ((trajectories[i] >= -M_PI / 2))) { // +ve v space
 				// So compute lowerbound on trajectories.
 
-				upperbound_v = min(dw.upperbound.v, admissibles[i].v);
-				lowerbound_v = 0;
+				upperbound_v = fmin(dw.upperbound.v, admissibles[i].v);
+				lowerbound_v = fmax(0, dw.lowerbound.v);
 			} else {
-				upperbound_v = 0;
-				lowerbound_v = max(dw.lowerbound.v, admissibles[i].v);
+				upperbound_v = fmin(0, dw.upperbound.v);
+				lowerbound_v = fmax(dw.lowerbound.v, admissibles[i].v);
 			}
-			upperbound_v = min(upperbound_v, max_trans_vel);
-			lowerbound_v = max(lowerbound_v, min_trans_vel);
+			upperbound_v = fmin(upperbound_v, max_trans_vel);
+			lowerbound_v = fmax(lowerbound_v, min_trans_vel);
 			/*
 			 * We are assuming focus within a narrow angle so that 0 and PI can not both be within focus.
 			 * Thus if zero is present, pi is not.
@@ -510,9 +522,10 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 				} else if (equals(vel, 0) && (equals(w, 0))) {
 					zeroVisited = true;
 				}
-				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound))
+				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound)) {
 					resultantVelocities.emplace_back(vel, w);
-				cout << "Resultant traj: [v="<<vel<<",w=" <<w<<endl;
+					cout << "Resultant traj: [v=" << vel << ",w=" << w << endl;
+				}
 			}
 			continue;
 		}
@@ -521,14 +534,14 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 		if ((trajectories[i] < M_PI / 2) && ((trajectories[i] >= -M_PI / 2))) { // +ve v space
 			// So compute lowerbound on trajectories.
 
-			upperbound_v = min(dw.upperbound.v, admissibles[i].v);
-			lowerbound_v = 0;
+			upperbound_v = fmin(dw.upperbound.v, admissibles[i].v);
+			lowerbound_v = fmax(0, dw.lowerbound.v);
 		} else {
-			upperbound_v = 0;
-			lowerbound_v = max(dw.lowerbound.v, admissibles[i].v);
+			upperbound_v = fmin(0, dw.upperbound.v);
+			lowerbound_v = fmax(dw.lowerbound.v, admissibles[i].v);
 		}
-		upperbound_v = min(upperbound_v, max_trans_vel);
-		lowerbound_v = max(lowerbound_v, min_trans_vel);
+		upperbound_v = fmin(upperbound_v, max_trans_vel);
+		lowerbound_v = fmax(lowerbound_v, min_trans_vel);
 
 		float step = (upperbound_v - lowerbound_v) / 3;
 		if (step == 0)
@@ -541,13 +554,13 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 			float upperbound_w, lowerbound_w;
 			if (tan(trajectories[i] < 0)) {
 				upperbound_w = dw.upperbound.w;
-				lowerbound_w = max(dw.lowerbound.w, admissibles[i].w);
+				lowerbound_w = fmax(dw.lowerbound.w, admissibles[i].w);
 			} else {
-				upperbound_w = min(dw.upperbound.w, admissibles[i].w);
+				upperbound_w = fmin(dw.upperbound.w, admissibles[i].w);
 				lowerbound_w = dw.lowerbound.w;
 			}
-			upperbound_w = min(upperbound_w, max_rot_vel);
-			lowerbound_w = max(lowerbound_w, min_rot_vel);
+			upperbound_w = fmin(upperbound_w, max_rot_vel);
+			lowerbound_w = fmax(lowerbound_w, min_rot_vel);
 			if ((w >= lowerbound_w) && ((w <= upperbound_w))) {
 				if (zeroVisited && equals(vel, 0) && equals(w, 0)) {
 					continue;
@@ -556,7 +569,7 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 				}
 				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound))
 					resultantVelocities.emplace_back(vel, w);
-				cout << "Resultant traj: [v="<<vel<<",w=" <<w<<endl;
+				cout << "Resultant traj: [v=" << vel << ",w=" << w << endl;
 			}
 
 		}
@@ -618,14 +631,12 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 	 * Create optimized search space.
 	 */
 
-
 	// Convert to body angle.
 //	float dir = -odom_all.pose.pose.position.z;
 //	float v = 0.5;
 //	Speed goal = Speed(v,v * tan(dir));
 	float upperbound = -M_PI - 1;
 	float lowerbound = M_PI + 1;
-
 
 //	restrictVelocitySpace(upperbound, lowerbound, goal);
 	deOscillator.getAdmissibleDirection(upperbound, lowerbound);
@@ -645,7 +656,7 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 		Speed realspeed = resultantVelocities[i];
 		float heading = computeHeading(realspeed, goalPose);
 		float clearance = computeClearance(realspeed);
-
+		// Patch. Clearance of 0 should not be possible here. if ()
 		float velocity = computeVelocity(realspeed);
 		float G = alpha * heading + beta * clearance + gamma * velocity;
 
@@ -684,7 +695,7 @@ void DWA::getData() {
 void DWA::updateGoalPose(Pose goal, float dir) {
 	if (!(goal == goalPose)) {
 		Pose currentPose = Pose(odom_all.pose.pose.position.x,
-						odom_all.pose.pose.position.y, odom_all.pose.pose.position.z);
+				odom_all.pose.pose.position.y, odom_all.pose.pose.position.z);
 		this->deOscillator.changeDir(currentPose, goal, dir);
 		goalPose = goal;
 	}
@@ -715,7 +726,7 @@ void DWA::run() {
 
 		loop_rate.sleep();
 
-		ROS_INFO("DWA Max Duration: %d", timer.getMaxDuration());
+		ROS_INFO("DWA fmax Duration: %d", timer.getMaxDuration());
 		ROS_INFO("DWA Average Duration: %d ", timer.getAveDuration());
 	}
 
