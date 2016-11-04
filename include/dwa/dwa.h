@@ -85,7 +85,7 @@ private:
 	 * These parameters are used for accessing the right back side of the wheelchair
 	 * as the start position to fill or check occupancy.
 	 */
-	float length_offset, width_offset;
+	float length_offset;
 // -------------DWA----------
 	/*
 	 * Angles made by normalised linear and angular velocities on an

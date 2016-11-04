@@ -27,48 +27,77 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 		topic(topic_t) {
 	this->goalPose = Pose(10, 0);
 	// Trajectories.
-	for (float i = -M_PI; i < M_PI; i += 0.5235987756) { // Split into 12 angles  for each quadrant.
+	for (float i = -M_PI; i < M_PI; i += 0.2617993878) { // Split into 12 angles  for each quadrant.
 		trajectories.push_back(i);
 	}
-	dt = 0.2; // seconds.
+	string ns = string(topic_t);
+	string res = ns + "/resolution";
+	float resolution;
+	this->n.getParam(res.c_str(), resolution);
+	cout << "Resolution:" << resolution << endl;
 
-	//	 TODO: Verify these parameters.
-	horizon = 20 / dt; // 10 seconds
-	refresh_period = 0; // 1 / dt;
-	// WC kinematics
-	acc_lim_v = 0.06 * 20; // 0.06 original but tooooo small. Tooooo.
-	acc_lim_w = 3;
-	decc_lim_v = -0.96;
-	decc_lim_w = -3;
-	max_trans_vel = MIN_LIN_VEL;
-	min_trans_vel = -MIN_LIN_VEL;
-	max_rot_vel = MAX_ANG_VEL;
-	min_rot_vel = -MIN_ANG_VEL;
-	// WC dimensions.
-	wc_length = 1.3; //m
-	wc_width = .6; //m
-
-	vstep = (max_trans_vel - min_trans_vel) / 5;
-	wstep = (max_rot_vel - min_rot_vel) / 5;
+	float mapsize;
+	string swl = ns + "/localmapwidth";
+	this->n.getParam(swl.c_str(), mapsize);
+	cout << "local mpa width: " << mapsize << endl;
 
 	/*
 	 * These parameters are used for accessing the right back side of the wheelchair
 	 * as the start position to fill or check occupancy.
 	 */
-	length_offset = .5;
-	width_offset = wc_width / 2;
+	string wclen = ns + "/wc_length";
+	this->n.getParam(wclen.c_str(), wc_length);
+//	wc_length+=.1;
+	cout << "wclen: " << wc_length << endl;
+
+	string wcwidth = ns + "/wc_width";
+	this->n.getParam(wcwidth.c_str(), wc_width);
+//	wc_width+=.2;
+	cout << "wc_width: " << wc_width << endl;
+
+	string wclenOff = ns + "/wc_length_centre_to_back";
+	this->n.getParam(wclenOff.c_str(), length_offset);
+	cout << "wc len ctb: " << length_offset << endl;
+
+	string dtStr = ns + "/dt";
+	this->n.getParam(dtStr.c_str(), dt);
+
+	//	 TODO: Verify these parameters.
+	horizon = 20 / dt; // 10 seconds
+	refresh_period = 0; // 1 / dt;
+
+	string acc_lim_v_str = ns + "/acc_lim_v";
+	this->n.getParam(acc_lim_v_str.c_str(), acc_lim_v);
+
+	string acc_lim_w_str = ns + "/acc_lim_w";
+	this->n.getParam(acc_lim_w_str.c_str(), acc_lim_w);
+
+	string decc_lim_v_str = ns + "/decc_lim_v";
+	this->n.getParam(decc_lim_v_str.c_str(), decc_lim_v);
+
+	string decc_lim_w_str = ns + "/decc_lim_w";
+	this->n.getParam(decc_lim_w_str.c_str(), decc_lim_w);
+
+	// WC kinematics
+
+	max_trans_vel = MIN_LIN_VEL;
+	min_trans_vel = -MIN_LIN_VEL;
+	max_rot_vel = MAX_ANG_VEL;
+	min_rot_vel = -MIN_ANG_VEL;
+	// WC dimensions.
+
+	vstep = (max_trans_vel - min_trans_vel) / 3;
+	wstep = (max_rot_vel - min_rot_vel) / 3;
 
 	odom = Speed(0, 0);
-	float gridsize = 0.05;
-	float mapsize = 4;
-	dwa_map = MapContainerPtr(new MapContainer(gridsize, mapsize));
+	dwa_map = MapContainerPtr(new MapContainer(resolution, mapsize));
 
 	deOscillator = DeOscillator();
 	deOscillator.changeDir(Pose(0, 0), goalPose);
 	// ROS
 	DATA_COMPLETE = 3;
 	n = n_t;
-	command_pub = n.advertise<geometry_msgs::Twist>("cmd_vel", 10);
+	command_pub = n.advertise < geometry_msgs::Twist > ("cmd_vel", 10);
 
 	odom_sub = n.subscribe("odom", 1, &DWA::odomCallback, this);
 
@@ -89,12 +118,12 @@ void DWA::odomCallback(const nav_msgs::Odometry& cmd) {
 	// update v
 	this->odom.v = cmd.twist.twist.linear.x;
 //#ifdef DEBUG
-	ROS_INFO("I heard something, v= %f", this->odom.v);
+//	ROS_INFO("I heard something, v= %f", this->odom.v);
 //#endif
 
 	this->odom.w = cmd.twist.twist.angular.z; // scaling factor that maps user's command to real world units.
 //#ifdef DEBUG
-	ROS_INFO("I heard something, w= %f", this->odom.w);
+//	ROS_INFO("I heard something, w= %f", this->odom.w);
 //#endif
 
 	tf::Quaternion q;
@@ -286,10 +315,10 @@ float DWA::computeDistToNearestObstacle(Speed candidateSpeed, int &timestep) {
  */
 bool DWA::onObstacle(Pose pose) {
 	// Get corners of wheelchair rectangle.
-	RealPoint topLeft = RealPoint(-length_offset, width_offset);
-	RealPoint topRight = RealPoint(wc_length - length_offset, width_offset);
-	RealPoint bottomRight = RealPoint(wc_length - length_offset, -width_offset);
-	RealPoint bottomLeft = RealPoint(-length_offset, -width_offset);
+	RealPoint topLeft = RealPoint(-length_offset, wc_width/2);
+	RealPoint topRight = RealPoint(wc_length - length_offset, wc_width/2);
+	RealPoint bottomRight = RealPoint(wc_length - length_offset, -wc_width/2);
+	RealPoint bottomLeft = RealPoint(-length_offset, -wc_width/2);
 
 	for (int k = 0; k < 1; k++) {
 		float delta = k * dwa_map->getResolution();
@@ -317,7 +346,7 @@ bool DWA::onObstacle(Pose pose) {
 
 		// Compute the outline of the rectangle.
 
-		vector<IntPoint> outline;
+		vector < IntPoint > outline;
 		bresenham(topLeftInt.x, topLeftInt.y, topRightInt.x, topRightInt.y,
 				outline);
 
@@ -387,7 +416,7 @@ vector<Speed> DWA::getAdmissibleVelocities(vector<Speed> admissibles,
 		int timestep = -1; // Accounts for latency problems.
 		float dist = computeDistToNearestObstacle(trajectory, timestep);
 		cout << "@@@@@@@Timestep: " << timestep << endl;
-		dist = ((dist < SAFEZONE) || (timestep < 5)) ? 0 : dist;
+		dist = ((dist < SAFEZONE) || (timestep < 3)) ? 0 : dist;
 
 		float va = copysign(sqrt(fabs(2 * dist * decc_lim_v)), trajectory.v);
 		// Here we are simply getting the velocity restriction for each trajectory.
@@ -412,7 +441,7 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 
 	DynamicWindow dw;
 	dw = computeDynamicWindow(dw);
-	vector<Speed> admissibles;
+	vector < Speed > admissibles;
 	admissibles.clear();
 	admissibles = getAdmissibleVelocities(admissibles, upperbound, lowerbound);
 
@@ -428,10 +457,12 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 				<< dw.upperbound.w << "]" << endl;
 		if (front) {
 			if (fabs(trajectories[i]) > (M_PI / 2 + .1)) {
+				cout <<"Facing front ignoring trajectory " <<endl;
 				continue;
 			}
 		} else {
 			if (fabs(trajectories[i]) < (M_PI / 2 + .1)) {
+				cout <<"Facing back ignoring trajectory " <<endl;
 				continue;
 			}
 		}
@@ -441,8 +472,11 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 			zeroVisited = true;
 		}
 //		cout << "Trajectory Heading : " << trajectories[i] << endl;
-		if (!isAngleInRegion(trajectories[i], upperbound, lowerbound))
+		if (!isAngleInRegion(trajectories[i], upperbound, lowerbound)) {
+			cout <<"Trajectory not in angle range " <<endl;
 			continue;
+		}
+
 		cout << "Passed trajectory Heading : " << trajectories[i] << endl;
 		// for very large tan, the data becomes skewed so just use the dw as boundary
 		//Here trajectory is either pi/2 or -PI/2
@@ -480,6 +514,8 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 						resultantVelocities.emplace_back(vel, w);
 						cout << "Resultant traj: [v=" << vel << ",w=" << w
 								<< endl;
+					} else {
+						cout << "Skipped traj: [v=" << vel << ",w=" << w << endl;
 					}
 				}
 			}
@@ -525,6 +561,8 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound)) {
 					resultantVelocities.emplace_back(vel, w);
 					cout << "Resultant traj: [v=" << vel << ",w=" << w << endl;
+				} else {
+					cout << "Skipped traj: [v=" << vel << ",w=" << w << endl;
 				}
 			}
 			continue;
@@ -567,9 +605,12 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 				} else if (equals(vel, 0) && (equals(w, 0))) {
 					zeroVisited = true;
 				}
-				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound))
+				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound)) {
 					resultantVelocities.emplace_back(vel, w);
 				cout << "Resultant traj: [v=" << vel << ",w=" << w << endl;
+				} else {
+					cout << "Skipped traj: [v=" << vel << ",w=" << w << endl;
+				}
 			}
 
 		}
@@ -598,13 +639,13 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
 //
 //	float upper, lower;
 ////	upper = upperboundt;
-////	lower = lowerboundt;
+////	lowerhttp://marketplace.eclipse.org/marketplace-client-intro?mpc_install=2963451 = lowerboundt;
 ////
 //	if (isAngleInRegion(upperboundt, upperbound, lowerbound)) {
 //		upper = upperboundt;
 //	} else {
 //		upper = upperbound;
-//	}
+//	}http://marketplace.eclipse.org/marketplace-client-intro?mpc_install=2963451http://marketplace.eclipse.org/marketplace-client-intro?mpc_install=2963451http://marketplace.eclipse.org/marketplace-client-intro?mpc_install=2963451http://marketplace.eclipse.org/marketplace-client-intro?mpc_install=2963451
 //	if (isAngleInRegion(lowerboundt, upperbound, lowerbound)) {
 //		lower = lowerboundt;
 //	} else {
@@ -624,7 +665,7 @@ vector<Speed> DWA::getResultantVelocities(vector<Speed> resultantVelocities,
  */
 Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 
-	vector<Speed> resultantVelocities;
+	vector < Speed > resultantVelocities;
 	resultantVelocities.clear();
 
 	/*
@@ -694,6 +735,7 @@ void DWA::getData() {
 
 void DWA::updateGoalPose(Pose goal, float dir) {
 	if (!(goal == goalPose)) {
+		cout<<"NEW Goal"<<endl;
 		Pose currentPose = Pose(odom_all.pose.pose.position.x,
 				odom_all.pose.pose.position.y, odom_all.pose.pose.position.z);
 		this->deOscillator.changeDir(currentPose, goal, dir);

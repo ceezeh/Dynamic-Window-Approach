@@ -15,7 +15,7 @@ struct Pose {
 	bool operator==(Pose pose) // copy/move constructor is called to construct arg
 			{
 		if (equals(this->x,
-				pose.x) && equals(this->x, pose.x) && equals(this->x, pose.x)) {
+				pose.x) && equals(this->y, pose.y) && equals(this->th, pose.th)) {
 			return true;
 		} else {
 			return false;

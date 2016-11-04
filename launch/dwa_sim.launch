@@ -1,0 +1,20 @@
+<launch>
+ <machine name="mainrobot" address="mainrobot" user="rock" 
+    env-loader="/home/rock/catkin_ws/devel/env.sh" default="never" />
+ 
+  <machine name="remote" address="remote" user="ceezeh" 
+    env-loader="/home/ceezeh/catkin_ws/devel/env.sh" default="never" />
+
+
+ 
+  <node pkg="map" type="local_map" name="local_map" machine="mainrobot" output="screen" required="true" launch-prefix="gdb -ex run --args">
+  	<rosparam command="load" file="$(find map)/map.yaml" />
+  </node>
+   
+    
+ <node pkg="dwa" type="run_dwa" name="dwa" machine="mainrobot"  output="screen" >
+     <rosparam command="load" file="$(find dwa)/dwa.yaml"/>
+     <rosparam command="load" file="$(find map)/map.yaml"/>
+   </node>
+  
+</launch>
