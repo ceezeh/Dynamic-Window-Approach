@@ -23,12 +23,16 @@
 #include "dwa/pose.h"
 #include "dwa/speed.h"
 #include "dwa/helper.h"
-#include "dwa/map.h"
+#include "dwa/distance.h"
+#include "dwa/concurrent_vector.h"
 #include <map/mapcontainer.h>
 #include <string>
 #define INVALIDCMD -2
-#define SAFEZONE .1 // This defines the safezone for DWA within which clearance is always zero.
+#define SAFEZONE .055 // This defines the safezone for DWA within which clearance is always zero.
+const float NULLDIST = -1;
+//const int NULLSTEP = -1;
 using namespace std;
+
 
 class DWA {
 public:
@@ -48,13 +52,14 @@ protected:
 	int DATA_COMPLETE;
 	int dataflag;
 	string topic; // Namespace for yaml variables.
+	vector<Distance>distFromObstacle;
 private:
 
 	// -----------Occupancy Grid Variables-------------------
 	/*
 	 * The goalstep is a measure used for our distribution to
 	 * determine the resolution of our speed distribution measured
-	 * in degrees on an Argand chart of w againt v.
+	 * in degrees on an Argand chart of w against v.
 	 */
 	float refresh_period; // rate at which we evaluate prediction as measures in counts representing time in seconds
 	MapContainerPtr dwa_map;
@@ -92,9 +97,10 @@ private:
 	 * argand chart are stored as trajectory parameters.
 	 */
 	vector<float> trajectories;
-	float computeDistToNearestObstacle(Speed candidateSpeed);
-	float computeDistToNearestObstacle(Speed candidateSpeed, int &timestep);
-	vector<Speed> getAdmissibleVelocities(vector<Speed> admissibles,
+	Distance computeDistToNearestObstacle(Speed candidateSpeed, int ind, int &timestep);
+	Distance computeDistToNearestObstacle(Speed candidateSpeed, int &timestep );
+//	float computeDistToNearestObstacle(Speed candidateSpeed, int &timestep);
+	concurrent_vector<Speed> getAdmissibleVelocities(concurrent_vector<Speed> admissibles,
 			float upperbound, float lowerbound);
 	DynamicWindow computeDynamicWindow(DynamicWindow dw);
 
@@ -102,12 +108,12 @@ private:
 protected:
 	float horizon; // time steps in the future.
 	float computeHeading(Speed candidateSpeed, Pose goal);
-	float computeClearance(Speed candidateSpeed);
+	float computeClearance(Speed candidateSpeed, int ind);
 
 	bool onObstacle(Pose pose);
 	float computeVelocity(Speed candidateSpeed);
 	virtual void getData();
-	vector<Speed> getResultantVelocities(vector<Speed> resultantVelocities,
+	concurrent_vector<Speed> getResultantVelocities(concurrent_vector<Speed> resultantVelocities,
 			float upperbound, float lowerbound);
 	virtual Speed computeNextVelocity(Speed chosenSpeed);
 	DeOscillator deOscillator;

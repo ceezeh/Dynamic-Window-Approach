@@ -2,7 +2,7 @@
 #define SPEED_H
 #include <map/helper.h>
 #define MAX_LIN_VEL 0.4 //m/s
-#define MIN_LIN_VEL 0.2 //m/s
+#define MIN_LIN_VEL 0.4 //m/s
 
 #define MAX_ANG_VEL .7 //rads/s
 #define MIN_ANG_VEL .7 //rads/s
