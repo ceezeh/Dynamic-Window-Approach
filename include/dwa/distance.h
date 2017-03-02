@@ -4,20 +4,23 @@
 
 using namespace std;
 struct Distance {
-	float lin;
+	float lookahead;
+	float clearance;
 	float ang;
 	Distance() {
-		ang = -1;
-		lin = -1;
+		lookahead = -1;
+		clearance = -1;
+		ang =-1;
 	}
 
-	Distance(float lin_t, float ang_t) {
-		lin = lin_t;
-		ang = ang_t;
+	Distance(float l_t, float c_t, float a_t) {
+		clearance = c_t;
+		lookahead = l_t;
+		ang = a_t;
 	}
 	bool operator==(Distance dist) // copy/move constructor is called to construct arg
 			{
-		if (equals(this->lin, dist.lin) && equals(this->ang, dist.ang)) {
+		if (equals(this->clearance, dist.clearance) && equals(this->lookahead, dist.lookahead)&& equals(this->ang, dist.ang)) {
 			return true;
 		} else {
 			return false;
@@ -25,7 +28,8 @@ struct Distance {
 	}
 	Distance operator=(Distance dist) // copy/move constructor is called to construct arg
 			{
-		this->lin = dist.lin;
+		this->clearance = dist.clearance;
+		this->lookahead = dist.lookahead;
 		this->ang = dist.ang;
 		return *this;
 	}

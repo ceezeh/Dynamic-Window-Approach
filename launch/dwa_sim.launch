@@ -9,7 +9,7 @@
  <node pkg="dwa" type="run_dwa" name="dwa"  output="screen" >
      <rosparam command="load" file="$(find map)/map.yaml"/>
      <rosparam command="load" file="$(find dwa)/dwa.yaml"/>
-	<rosparam command="load" file="$(find shared_dwa)/sim.yaml"/>
+	 <rosparam command="load" file="$(find dwa)/sim.yaml"/>
    </node>
   
 </launch>
