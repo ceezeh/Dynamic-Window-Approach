@@ -28,11 +28,11 @@
 #include <map/mapcontainer.h>
 #include <string>
 #define INVALIDCMD -2
-#define SAFEZONE .02 // This defines the safezone for DWA within which clearance is always zero.
+#define SAFEZONE .1 // This defines the safezone for DWA within which clearance is always zero.
 const float NULLDIST = -1;
 //const int NULLSTEP = -1;
 using namespace std;
-
+using namespace mapcontainer;
 #define ANG_STEP  0.2243994753
 
 class DWA {
@@ -66,6 +66,7 @@ private:
 	float refresh_period; // rate at which we evaluate prediction as measures in counts representing time in seconds
 	MapContainerPtr dwa_map;
 	Pose goalPose;
+	WCDimensionsPtr wcDimensions;
 //----------------- Motor Variables ---------------
 	Speed odom;
 
@@ -86,13 +87,13 @@ private:
 	float max_trans_vel, min_trans_vel;
 	float max_rot_vel, min_rot_vel;
 
-	float wc_length, wc_width;
+
 	float vstep, wstep;
 	/*
 	 * These parameters are used for accessing the right back side of the wheelchair
 	 * as the start position to fill or check occupancy.
 	 */
-	float length_offset;
+
 // -------------DWA----------
 	/*
 	 * Angles made by normalised linear and angular velocities on an
@@ -113,7 +114,7 @@ protected:
 	float computeHeading(Speed candidateSpeed, Pose goal);
 	float computeClearance(Speed candidateSpeed);
 
-	bool onObstacle(Pose pose);
+	bool onObstacle(Pose pose, Speed);
 	float computeVelocity(Speed candidateSpeed);
 	virtual void getData();
 	concurrent_vector<Speed> getResultantVelocities(

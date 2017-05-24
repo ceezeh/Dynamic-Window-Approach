@@ -20,6 +20,7 @@
 #define MAP_BIT 0
 
 using namespace std;
+using namespace mapcontainer;
 using namespace std::chrono;
 
 bool isSim = false;
@@ -43,7 +44,7 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	cout << "Resolution:" << resolution << endl;
 
 	float mapsize;
-	string swl = ns + "/localmapwidth";
+	string swl = ns + "/mapwidth";
 	this->n.getParam(swl.c_str(), mapsize);
 	cout << "local mpa width: " << mapsize << endl;
 
@@ -51,25 +52,12 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	 * These parameters are used for accessing the right back side of the wheelchair
 	 * as the start position to fill or check occupancy.
 	 */
-	string wclen = ns + "/wc_length";
-	this->n.getParam(wclen.c_str(), wc_length);
-//	wc_length+=.1;
-	cout << "wclen: " << wc_length << endl;
-
-	string wcwidth = ns + "/wc_width";
-	this->n.getParam(wcwidth.c_str(), wc_width);
-//	wc_width+=.2;
-	cout << "wc_width: " << wc_width << endl;
-
-	string wclenOff = ns + "/wc_length_centre_to_back";
-	this->n.getParam(wclenOff.c_str(), length_offset);
-	cout << "wc len ctb: " << length_offset << endl;
 
 	string dtStr = ns + "/dt";
 	this->n.getParam(dtStr.c_str(), dt);
 
 	//	 TODO: Verify these parameters.
-	horizon = 75; // 10 seconds
+	horizon = 40; // 10 seconds
 	refresh_period = 0; // 1 / dt;
 
 	string acc_lim_v_str = ns + "/acc_lim_v";
@@ -96,13 +84,14 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	wstep = (max_rot_vel - min_rot_vel) / 3;
 
 	odom = Speed(0, 0);
-	dwa_map = MapContainerPtr(new MapContainer(resolution, mapsize));
+	dwa_map = MapContainerPtr(
+			new MapContainer(resolution, mapsize, WCDimensions(&n, topic_t)));
 
 	deOscillator = DeOscillator();
 	deOscillator.changeDir(Pose(0, 0), goalPose);
 	// ROS
 	DATA_COMPLETE = 3;
-
+	wcDimensions = WCDimensionsPtr(new WCDimensions(&n, topic_t));
 	string cmd_topic_name = ns + "/cmd_topic";
 	string cmd_topic;
 	this->n.getParam(cmd_topic_name.c_str(), cmd_topic);
@@ -276,6 +265,7 @@ float DWA::computeClearance(Speed candidateSpeed) {
 //	int dummy;
 	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
 	int ind = getClearanceIndex(traj);
+	if (ind ==28) ind =0;
 	Distance dist = computeDistToNearestObstacle(candidateSpeed, ind);
 	cout << "Traj= " << traj << ", Index= " << ind << endl;
 #ifdef DEBUG
@@ -305,7 +295,7 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
 	float x, y, th;
 	x = y = th = 0;
-	float v = 0.1;
+	float v = copysign(0.1, candidateSpeed.v);
 	float w = v * tan(traj);
 	if (equals(fabs(traj), M_PI / 2)) {
 		w = copysign(0.2, traj);
@@ -357,7 +347,7 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 			count = refresh_period;
 
 			Pose pose = Pose(x, y, th);
-			bool isObstacle = onObstacle(pose);
+			bool isObstacle = onObstacle(pose, candidateSpeed);
 			if (isObstacle) {
 				break;
 			}
@@ -379,25 +369,52 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
  * Checks if there is any obstacle in the occupancy grid to obstruct the
  * wheelchair if its centre where at pose. Returns the location of the obstacles.
  */
-bool DWA::onObstacle(Pose pose) {
+bool DWA::onObstacle(Pose pose, Speed candidateSpeed) {
 // Get corners of wheelchair rectangle.
-	RealPoint topLeft = RealPoint(-length_offset, wc_width / 2);
-	RealPoint topRight = RealPoint(wc_length - length_offset, wc_width / 2);
-	RealPoint bottomRight = RealPoint(wc_length - length_offset, -wc_width / 2);
-	RealPoint bottomLeft = RealPoint(-length_offset, -wc_width / 2);
-
+//	RealPoint topLeft = wcDimensions->getTopLeftCorner1();
+//	RealPoint topRight = wcDimensions->getTopRightCorner1();
+//	RealPoint bottomRight = wcDimensions->getBottomRightCorner1();
+//	RealPoint bottomLeft = wcDimensions->getBottomLeftCorner1();
+//
+//	RealPoint topLeft2 = wcDimensions->getTopLeftCorner2();
+//	RealPoint topRight2 = wcDimensions->getTopRightCorner2();
+//	RealPoint bottomRight2 = wcDimensions->getBottomRightCorner2();
+//	RealPoint bottomLeft2 = wcDimensions->getBottomLeftCorner2();
+	float upper = -0.001;
+	float lower = 0.001;
+	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
 	for (int k = 0; k < 1; k++) {
+
+		RealPoint topLeft = wcDimensions->getTopLeftCorner1();
+		RealPoint topRight = wcDimensions->getTopRightCorner1();
+		RealPoint bottomRight = wcDimensions->getBottomRightCorner1();
+		RealPoint bottomLeft = wcDimensions->getBottomLeftCorner1();
+
+		RealPoint topLeft2 = wcDimensions->getTopLeftCorner2();
+		RealPoint topRight2 = wcDimensions->getTopRightCorner2();
+		RealPoint bottomRight2 = wcDimensions->getBottomRightCorner2();
+		RealPoint bottomLeft2 = wcDimensions->getBottomLeftCorner2();
+
 		float delta = k * dwa_map->getResolution();
-		topLeft += RealPoint(-delta, delta);
+		topLeft += RealPoint(delta, -delta);
 		topRight += RealPoint(-delta, -delta);
 		bottomRight += RealPoint(-delta, delta);
 		bottomLeft += RealPoint(delta, delta);
 
+		topLeft2 += RealPoint(-delta, -delta);
+		topRight2 += RealPoint(-delta, -delta);
+		bottomRight2 += RealPoint(-delta, delta);
+		bottomLeft2 += RealPoint(-delta, delta);
 		// Transform corners into pose coordinate.
 		rotateFromBody(&topLeft, pose);
 		rotateFromBody(&topRight, pose);
 		rotateFromBody(&bottomLeft, pose);
 		rotateFromBody(&bottomRight, pose);
+
+		rotateFromBody(&topLeft2, pose);
+		rotateFromBody(&topRight2, pose);
+		rotateFromBody(&bottomLeft2, pose);
+		rotateFromBody(&bottomRight2, pose);
 
 		IntPoint topLeftInt;
 		dwa_map->realToMap(topLeft, topLeftInt);
@@ -407,6 +424,14 @@ bool DWA::onObstacle(Pose pose) {
 		dwa_map->realToMap(bottomLeft, bottomLeftInt);
 		IntPoint bottomRightInt;
 		dwa_map->realToMap(bottomRight, bottomRightInt);
+		IntPoint topLeftInt2;
+		dwa_map->realToMap(topLeft2, topLeftInt2);
+		IntPoint topRightInt2;
+		dwa_map->realToMap(topRight2, topRightInt2);
+		IntPoint bottomLeftInt2;
+		dwa_map->realToMap(bottomLeft2, bottomLeftInt2);
+		IntPoint bottomRightInt2;
+		dwa_map->realToMap(bottomRight2, bottomRightInt2);
 
 		// Now get the map equivalent of points.
 
@@ -416,12 +441,23 @@ bool DWA::onObstacle(Pose pose) {
 		bresenham(topLeftInt.x, topLeftInt.y, topRightInt.x, topRightInt.y,
 				outline);
 
-		bresenham(topRightInt.x, topRightInt.y, bottomRightInt.x,
+		bresenham(topRightInt.x, topRightInt.y, topLeftInt2.x, topLeftInt2.y,
+				outline);
+		bresenham(topLeftInt2.x, topLeftInt2.y, topRightInt2.x, topRightInt2.y,
+				outline);
+		bresenham(topRightInt2.x, topRightInt2.y, bottomRightInt2.x,
+				bottomRightInt2.y, outline);
+		bresenham(bottomRightInt2.x, bottomRightInt2.y, bottomLeftInt2.x,
+				bottomLeftInt2.y, outline);
+
+		bresenham(bottomLeftInt2.x, bottomLeftInt2.y, bottomRightInt.x,
 				bottomRightInt.y, outline);
 		bresenham(bottomRightInt.x, bottomRightInt.y, bottomLeftInt.x,
 				bottomLeftInt.y, outline);
 		bresenham(bottomLeftInt.x, bottomLeftInt.y, topLeftInt.x, topLeftInt.y,
 				outline);
+
+		RealPoint obst;
 
 		for (int i = 0; i < outline.size(); i++) {
 			IntPoint point = outline[i];
@@ -433,7 +469,37 @@ bool DWA::onObstacle(Pose pose) {
 			if (this->dwa_map->at(point.x, point.y) > 0) {
 				cout << "Probbing...Obstacle found at point [x=" << point.x
 						<< ", y=" << point.y << "]" << endl;
-				return true;
+
+				dwa_map->mapToReal(point, &obst);
+				float ang = pose.bearingToPose(Pose(obst.x, obst.y));
+				float lower_t = wraparound(ang - M_PI - M_PI / 4);
+				float upper_t = wraparound(ang - M_PI + M_PI / 4);
+
+				if (isAngleInRegion(lower_t, upper, lower)) {
+					// Convert all to positive
+					if (lower < 0) {
+						lower += 2 * M_PI;
+					}
+					if (lower_t < 0) {
+						lower_t += 2 * M_PI;
+					}
+					lower = wraparound(max(lower, lower_t));
+				} else if (isAngleInRegion(upper_t, upper, lower)) {
+					if (upper < 0) {
+						upper += 2 * M_PI;
+					}
+					if (upper_t < 0) {
+						upper_t += 2 * M_PI;
+					}
+					upper = wraparound(min(upper, upper_t));
+				} else {
+					return true;
+				}
+
+				if (!isAngleInRegion(traj, upper, lower)) {
+					return true;
+				}
+//				return true;
 			}
 		}
 	}
@@ -508,10 +574,10 @@ concurrent_vector<Speed> DWA::getAdmissibleVelocities(
 
 DynamicWindow DWA::computeDynamicWindow(DynamicWindow dw) {
 	cout << "odom.v: " << odom.v << ", odom.w: " << odom.w << endl;
-	dw.upperbound.v = odom.v + acc_lim_v * dt;
-	dw.upperbound.w = odom.w + acc_lim_w * dt;
-	dw.lowerbound.v = odom.v + decc_lim_v * dt;
-	dw.lowerbound.w = odom.w + decc_lim_w * dt;
+	dw.upperbound.v = odom.v + acc_lim_v * dt * 10;
+	dw.upperbound.w = odom.w + acc_lim_w * dt * 10;
+	dw.lowerbound.v = odom.v + decc_lim_v * dt * 10;
+	dw.lowerbound.w = odom.w + decc_lim_w * dt * 10;
 	return dw;
 }
 

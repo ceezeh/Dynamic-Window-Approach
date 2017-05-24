@@ -110,9 +110,9 @@ public:
 
 	void getAdmissibleDirection(float& upperbound, float& lowerbound) {
 		cout << "velDir" << velDir << endl;
-		upperbound = velDir + M_PI * 60 / 180;
+		upperbound = velDir + M_PI * 90 / 180;
 		upperbound = wraparound(upperbound);
-		lowerbound = velDir - M_PI * 60 / 180;
+		lowerbound = velDir - M_PI * 90 / 180;
 		lowerbound = wraparound(lowerbound);
 	}
 

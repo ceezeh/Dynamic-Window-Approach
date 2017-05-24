@@ -1,2 +1,2 @@
 issim: true
-#cmd_topic: "cmd_vel"
+cmd_topic: "cmd_vel"
