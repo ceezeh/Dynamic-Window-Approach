@@ -44,7 +44,7 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	cout << "Resolution:" << resolution << endl;
 
 	float mapsize;
-	string swl = ns + "/mapwidth";
+	string swl = ns + "/localmapwidth";
 	this->n.getParam(swl.c_str(), mapsize);
 	cout << "local mpa width: " << mapsize << endl;
 
@@ -356,6 +356,7 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 	float dx = candidateSpeed.v * cos(th) * dt;
 	float dy = candidateSpeed.v * sin(th) * dt;
 	float ds = vectorNorm(Pose(dx, dy));
+	th = fabs(th);
 	if (equals(traj, 0) || equals(traj, M_PI))
 		return Distance(acc, acc + ds, 2 * M_PI);
 	if (equals(fabs(traj), M_PI / 2)) {

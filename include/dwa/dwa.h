@@ -28,7 +28,7 @@
 #include <map/mapcontainer.h>
 #include <string>
 #define INVALIDCMD -2
-#define SAFEZONE .1 // This defines the safezone for DWA within which clearance is always zero.
+#define SAFEZONE .01 // This defines the safezone for DWA within which clearance is always zero.
 const float NULLDIST = -1;
 //const int NULLSTEP = -1;
 using namespace std;
