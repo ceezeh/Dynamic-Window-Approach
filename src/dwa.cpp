@@ -10,15 +10,16 @@
 #include <sstream>
 #include <stdlib.h>
 #include <numeric>
-#include <map/helper.h>
+#include <costmap/helper.h>
 #include "dwa/dwa.h"
 #include <chrono>
+#include "costmap/checkoccupancy.h"
 
 #define DEBUG
 //#define USER_CMD_BIT 2
-#define ODOM_BIT 1
-#define MAP_BIT 0
-
+#define MAP_BIT 1
+#define ODOM_BIT 0
+#define lo_occ_thres 50
 using namespace std;
 using namespace mapcontainer;
 using namespace std::chrono;
@@ -44,9 +45,9 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	cout << "Resolution:" << resolution << endl;
 
 	float mapsize;
-	string swl = ns + "/localmapwidth";
+	string swl = ns + "/globalmapwidth";
 	this->n.getParam(swl.c_str(), mapsize);
-	cout << "local mpa width: " << mapsize << endl;
+	cout << "Global mpa width: " << mapsize << endl;
 
 	/*
 	 * These parameters are used for accessing the right back side of the wheelchair
@@ -57,7 +58,7 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	this->n.getParam(dtStr.c_str(), dt);
 
 	//	 TODO: Verify these parameters.
-	horizon = 40; // 10 seconds
+	horizon = 20; // 10 seconds
 	refresh_period = 0; // 1 / dt;
 
 	string acc_lim_v_str = ns + "/acc_lim_v";
@@ -90,20 +91,22 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	deOscillator = DeOscillator();
 	deOscillator.changeDir(Pose(0, 0), goalPose);
 	// ROS
-	DATA_COMPLETE = 3;
+	DATA_COMPLETE = 1;
 	wcDimensions = WCDimensionsPtr(new WCDimensions(&n, topic_t));
 	string cmd_topic_name = ns + "/cmd_topic";
 	string cmd_topic;
 	this->n.getParam(cmd_topic_name.c_str(), cmd_topic);
 	cout << "cmd_topic: " << cmd_topic << endl;
 
-	command_pub = n.advertise<geometry_msgs::Twist>(cmd_topic.c_str(), 10);
+	command_pub = n.advertise<geometry_msgs::Twist>(cmd_topic.c_str(), 1);
 
-	odom_sub = n.subscribe("odom", 1, &DWA::odomCallback, this);
+	firstOdom = true;
+	velocity_sub = n.subscribe("odom", 1, &DWA::velocityCallback, this);
 
-	occupancy_sub = n.subscribe("local_map", 1, &DWA::occupancyCallback, this);
+	occupancy_sub = n.subscribe("global_map", 1, &DWA::occupancyCallback, this);
 
 	goalPose_sub = n.subscribe("goalpose", 1, &DWA::goalPoseCallback, this);
+
 	dataflag = 0;
 
 }
@@ -112,30 +115,11 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 //	delete this->dwa_map;
 //}
 
-void DWA::odomCallback(const nav_msgs::Odometry& cmd) {
+void DWA::velocityCallback(const nav_msgs::Odometry& cmd) {
 	// Update dataflag.
 	dataflag |= (1 << ODOM_BIT);
-	// update v
 	this->odom.v = cmd.twist.twist.linear.x;
-//#ifdef DEBUG
-//	ROS_INFO("I heard something, v= %f", this->odom.v);
-//#endif
-
 	this->odom.w = cmd.twist.twist.angular.z; // scaling factor that maps user's command to real world units.
-//#ifdef DEBUG
-//	ROS_INFO("I heard something, w= %f", this->odom.w);
-//#endif
-
-	tf::Quaternion q;
-	tf::quaternionMsgToTF(cmd.pose.pose.orientation, q);
-	tf::Matrix3x3 m(q);
-	double roll, pitch, yaw;
-	m.getRPY(roll, pitch, yaw);
-//		wraparoundGlobalPose (globalPose);
-
-	odom_all = nav_msgs::Odometry(cmd);
-	odom_all.pose.pose.position.z = yaw;
-	deOscillator.updateOdom(odom_all);
 }
 
 void DWA::occupancyCallback(const nav_msgs::OccupancyGrid& og) {
@@ -143,23 +127,15 @@ void DWA::occupancyCallback(const nav_msgs::OccupancyGrid& og) {
 	dataflag |= (1 << MAP_BIT);
 	this->dwa_map->updateMap(og);
 
-//	for (int i = 0; i < this->dwa_map->getNoOfGrids(); i++) {
-//		for (int j = 0; j < this->dwa_map->getNoOfGrids(); j++) {
-//			int val = this->dwa_map->at(i, j);
-//			if (val != 0) {
-//				cout << "(" << i << "," << j << "), ";
-//			}
-//		}
-//	}
-//	cout << endl;
+	nav_msgs::Odometry odomt;
+	odomt.pose.pose = this->dwa_map->getMap().info.origin;
+	odomt.twist.twist.angular.z = odom.w;
+	odomt.twist.twist.linear.x = odom.v;
+	deOscillator.updateOdom(odomt);
 }
+
 void DWA::goalPoseCallback(const geometry_msgs::Pose& p) {
-	tf::Quaternion q;
-	tf::quaternionMsgToTF(p.orientation, q);
-	tf::Matrix3x3 m(q);
-	double roll, pitch, yaw;
-	m.getRPY(roll, pitch, yaw);
-	Pose goal = Pose(p.position.x, p.position.y, yaw);
+	Pose goal = Pose(p.position.x, p.position.y, getYaw(p.orientation));
 	updateGoalPose(goal);
 }
 /*
@@ -176,57 +152,17 @@ float DWA::computeHeading(Speed candidateSpeed, Pose goal) {
 	if (candidateSpeed == Speed(0, 0)) {
 		return 0;
 	}
-	// All calculations is done is local frame.
-	// Normalise user's speed first.
-	float x, y, th;
-	x = y = th = 0;
 
-	// Here we are assuming the robot will use this speed for the next few time steps. // This could be because of latency
-	for (int i = 0; i < 10; i++) {
-
-		x += candidateSpeed.v * cos(th) * dt;
-		y += candidateSpeed.v * sin(th) * dt;
-		th += candidateSpeed.w * dt;
-		th = wraparound(th);
-	}
-	Speed prevSpeed = candidateSpeed;
-	Speed nextSpeed = candidateSpeed;
-	nextSpeed.v -= copysign(decc_lim_v, nextSpeed.v) * dt;
-	nextSpeed.w -= copysign(decc_lim_w, nextSpeed.w) * dt;
-	// Now exert maximum deceleration.
-	while ((fabs(nextSpeed.v) < fabs(prevSpeed.v))
-			|| (fabs(nextSpeed.w) < fabs(prevSpeed.w))) {
-		if (fabs(nextSpeed.v) < fabs(prevSpeed.v)) {
-			x += nextSpeed.v * cos(th) * dt;
-			y += nextSpeed.v * sin(th) * dt;
-			prevSpeed.v = nextSpeed.v;
-			nextSpeed.v -= copysign(decc_lim_v, nextSpeed.v) * dt;
-		}
-		if (fabs(nextSpeed.w) < fabs(prevSpeed.w)) {
-			th += nextSpeed.w * dt;
-			th = wraparound(th);
-			prevSpeed.w = nextSpeed.w;
-			nextSpeed.w -= copysign(decc_lim_w, nextSpeed.w) * dt;
-		}
-
-	}
-	Pose currentpose = Pose(odom_all.pose.pose.position.x,
-			odom_all.pose.pose.position.y, odom_all.pose.pose.position.z);
-
-	float xt = cos(currentpose.th) * x - sin(currentpose.th) * y;
-	float yt = sin(currentpose.th) * x + cos(currentpose.th) * y;
-
-	Pose endPose = currentpose + Pose(xt, yt, th);
-
-	if (endPose == goal)
-		return 1;
-	float bearingToGoal = endPose.bearingToPose(goal);
+	Pose currentPose;
+	this->getCurrentPose(currentPose);
+	float velHeading = atan2(candidateSpeed.w, candidateSpeed.v);
+	float headingToGoal = angDiff( goal.th, currentPose.th);
 	bool front = this->deOscillator.isFront();
 	float heading;
 	if (front) {
-		heading = M_PI - angDiff(bearingToGoal, endPose.th);
+		heading = M_PI - angDiff(headingToGoal, velHeading);
 	} else {
-		heading = -angDiff(bearingToGoal, endPose.th);
+		heading = -angDiff(headingToGoal, velHeading);
 	}
 	/*
 	 * normalise the test speed as well.
@@ -265,7 +201,8 @@ float DWA::computeClearance(Speed candidateSpeed) {
 //	int dummy;
 	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
 	int ind = getClearanceIndex(traj);
-	if (ind ==28) ind =0;
+	if (ind == 28)
+		ind = 0;
 	Distance dist = computeDistToNearestObstacle(candidateSpeed, ind);
 	cout << "Traj= " << traj << ", Index= " << ind << endl;
 #ifdef DEBUG
@@ -292,6 +229,7 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed, int i) {
 Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 	// Compute rectangular dimension depicting wheelchair in  occupancy map.
 	// Compute and normalize clearance.
+	bool isEscapeTraj = true;
 	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
 	float x, y, th;
 	x = y = th = 0;
@@ -325,10 +263,10 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 			acc += ds;
 			dth = w * dt;
 		} else {
-			dx = candidateSpeed.v * cos(th) * dt;
-			dy = candidateSpeed.v * sin(th) * dt;
-			ds = vectorNorm(Pose(dx, dy));
 			dth = candidateSpeed.w * dt;
+			dx = candidateSpeed.v * cos(th + dth) * dt;
+			dy = candidateSpeed.v * sin(th + dth) * dt;
+			ds = vectorNorm(Pose(dx, dy));
 		}
 		x += dx;
 		y += dy;
@@ -343,14 +281,15 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 		}
 		// the below is expensive to compute so
 		// compute only after every 2 seconds into the future.
-		if (count-- <= 0) {
-			count = refresh_period;
 
-			Pose pose = Pose(x, y, th);
+		Pose pose = Pose(x, y, th);
+		if (i > 1) {
 			bool isObstacle = onObstacle(pose, candidateSpeed);
+
 			if (isObstacle) {
 				break;
 			}
+
 		}
 	}
 	float dx = candidateSpeed.v * cos(th) * dt;
@@ -371,19 +310,15 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
  * wheelchair if its centre where at pose. Returns the location of the obstacles.
  */
 bool DWA::onObstacle(Pose pose, Speed candidateSpeed) {
-// Get corners of wheelchair rectangle.
-//	RealPoint topLeft = wcDimensions->getTopLeftCorner1();
-//	RealPoint topRight = wcDimensions->getTopRightCorner1();
-//	RealPoint bottomRight = wcDimensions->getBottomRightCorner1();
-//	RealPoint bottomLeft = wcDimensions->getBottomLeftCorner1();
-//
-//	RealPoint topLeft2 = wcDimensions->getTopLeftCorner2();
-//	RealPoint topRight2 = wcDimensions->getTopRightCorner2();
-//	RealPoint bottomRight2 = wcDimensions->getBottomRightCorner2();
-//	RealPoint bottomLeft2 = wcDimensions->getBottomLeftCorner2();
-	float upper = -0.001;
-	float lower = 0.001;
-	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
+
+//	geometry_msgs::Pose pose = req.pose;
+	float heading = getYaw(dwa_map->getMap().info.origin.orientation);
+	float xt = cos(heading) * pose.x - sin(heading) * pose.y;
+	float yt = sin(heading) * pose.x + cos(heading) * pose.y;
+	pose.x = xt + dwa_map->getMap().info.origin.position.x;
+	pose.y = yt + dwa_map->getMap().info.origin.position.y;
+	pose.th = angAdd(pose.th, heading);
+
 	for (int k = 0; k < 1; k++) {
 
 		RealPoint topLeft = wcDimensions->getTopLeftCorner1();
@@ -407,15 +342,15 @@ bool DWA::onObstacle(Pose pose, Speed candidateSpeed) {
 		bottomRight2 += RealPoint(-delta, delta);
 		bottomLeft2 += RealPoint(-delta, delta);
 		// Transform corners into pose coordinate.
-		rotateFromBody(&topLeft, pose);
-		rotateFromBody(&topRight, pose);
-		rotateFromBody(&bottomLeft, pose);
-		rotateFromBody(&bottomRight, pose);
+		rotateFromBody(pose, &topLeft);
+		rotateFromBody(pose, &topRight);
+		rotateFromBody(pose, &bottomLeft);
+		rotateFromBody(pose, &bottomRight);
 
-		rotateFromBody(&topLeft2, pose);
-		rotateFromBody(&topRight2, pose);
-		rotateFromBody(&bottomLeft2, pose);
-		rotateFromBody(&bottomRight2, pose);
+		rotateFromBody(pose, &topLeft2);
+		rotateFromBody(pose, &topRight2);
+		rotateFromBody(pose, &bottomLeft2);
+		rotateFromBody(pose, &bottomRight2);
 
 		IntPoint topLeftInt;
 		dwa_map->realToMap(topLeft, topLeftInt);
@@ -458,51 +393,21 @@ bool DWA::onObstacle(Pose pose, Speed candidateSpeed) {
 		bresenham(bottomLeftInt.x, bottomLeftInt.y, topLeftInt.x, topLeftInt.y,
 				outline);
 
-		RealPoint obst;
-
 		for (int i = 0; i < outline.size(); i++) {
 			IntPoint point = outline[i];
-//			cout << "Probbing Grid.. X:"<<point.x<<", Y: "<<point.y<<endl;
+			//			cout << "Probbing Grid.. X:"<<point.x<<", Y: "<<point.y<<endl;
 			if (point.x < 0 || point.x > dwa_map->getNoOfGrids() || point.y < 0
 					|| point.y > dwa_map->getNoOfGrids()) {
 				continue;
 			}
-			if (this->dwa_map->at(point.x, point.y) > 0) {
+			if (this->dwa_map->at(point.x, point.y) > lo_occ_thres) {
 				cout << "Probbing...Obstacle found at point [x=" << point.x
 						<< ", y=" << point.y << "]" << endl;
+				return true;
 
-				dwa_map->mapToReal(point, &obst);
-				float ang = pose.bearingToPose(Pose(obst.x, obst.y));
-				float lower_t = wraparound(ang - M_PI - M_PI / 4);
-				float upper_t = wraparound(ang - M_PI + M_PI / 4);
-
-				if (isAngleInRegion(lower_t, upper, lower)) {
-					// Convert all to positive
-					if (lower < 0) {
-						lower += 2 * M_PI;
-					}
-					if (lower_t < 0) {
-						lower_t += 2 * M_PI;
-					}
-					lower = wraparound(max(lower, lower_t));
-				} else if (isAngleInRegion(upper_t, upper, lower)) {
-					if (upper < 0) {
-						upper += 2 * M_PI;
-					}
-					if (upper_t < 0) {
-						upper_t += 2 * M_PI;
-					}
-					upper = wraparound(min(upper, upper_t));
-				} else {
-					return true;
-				}
-
-				if (!isAngleInRegion(traj, upper, lower)) {
-					return true;
-				}
-//				return true;
 			}
 		}
+
 	}
 	return false;
 }
@@ -552,7 +457,10 @@ concurrent_vector<Speed> DWA::getAdmissibleVelocities(
 
 		// need to convert velocities from normalised to real values.
 		trajectory.w = trajectory.v * tan(trajectories[i]);
-//
+		trajectory.w =
+				(trajectory.w > max_rot_vel) ? max_rot_vel :
+				(trajectory.w < min_rot_vel) ? min_rot_vel : trajectory.w;
+		//
 //		int timestep = -1; // Accounts for latency problems.
 		Distance dist = computeDistToNearestObstacle(trajectory, i);
 		ROS_INFO(
@@ -586,12 +494,15 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 		concurrent_vector<Speed> resultantVelocities,
 		float upperbound = M_PI + 1, float lowerbound = -M_PI - 1) {
 
+	MyTimer timer;
+	timer.start();
 	DynamicWindow dw;
 	dw = computeDynamicWindow(dw);
 	concurrent_vector<Speed> admissibles;
 	admissibles.clear();
 	admissibles = getAdmissibleVelocities(admissibles, upperbound, lowerbound);
-
+	timer.stop();
+	cout << "[DEBUG] Admissible time:" << timer.getLastDuration() << endl;
 	bool front = deOscillator.isFront();
 // Check direction of goal is in front or behind.
 	bool zeroVisited = false;	// ensures that we add v=w= 0 only once.
@@ -827,7 +738,7 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 	 */
 
 	// Convert to body angle.
-//	float dir = -odom_all.pose.pose.position.z;
+//	float dir = -this->dwa_map->getMap().info.origin.position.z;
 //	float v = 0.5;
 //	Speed goal = Speed(v,v * tan(dir));
 	float upperbound = -M_PI - 1;
@@ -865,8 +776,9 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 		ROS_INFO("RealVel[v = %f, w= %f], heading=%f, clearance=%f, "
 				"velocity = %f, cost = %f, Pose (x: %f, y: %f, th: %f)",
 				realspeed.v, realspeed.w, heading, clearance, velocity, cost,
-				odom_all.pose.pose.position.x, odom_all.pose.pose.position.y,
-				odom_all.pose.pose.position.z);
+				this->dwa_map->getMap().info.origin.position.x,
+				this->dwa_map->getMap().info.origin.position.y,
+				getYaw(this->dwa_map->getMap().info.origin.orientation));
 #endif
 		mylock.lock();
 		if (cost > maxCost) {
@@ -893,8 +805,9 @@ void DWA::getData() {
 void DWA::updateGoalPose(Pose goal, float dir) {
 	if (!(goal == goalPose)) {
 		cout << "NEW Goal" << endl;
-		Pose currentPose = Pose(odom_all.pose.pose.position.x,
-				odom_all.pose.pose.position.y, odom_all.pose.pose.position.z);
+		Pose currentPose = Pose(this->dwa_map->getMap().info.origin.position.x,
+				this->dwa_map->getMap().info.origin.position.y,
+				getYaw(this->dwa_map->getMap().info.origin.orientation));
 		this->deOscillator.changeDir(currentPose, goal, dir);
 		goalPose = goal;
 	}

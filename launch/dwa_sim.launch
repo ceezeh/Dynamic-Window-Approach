@@ -4,10 +4,10 @@
     env-loader="/home/ceezeh/catkin_ws/devel/env.sh" default="never" />
 
 
-<include file="$(find map)/launch/sim_map.launch"/>
+<include file="$(find costmap)/launch/sim_map.launch"/>
     
  <node pkg="dwa" type="run_dwa" name="dwa"  output="screen" >
-     <rosparam command="load" file="$(find map)/map.yaml"/>
+     <rosparam command="load" file="$(find costmap)/map.yaml"/>
      <rosparam command="load" file="$(find dwa)/dwa.yaml"/>
 	 <rosparam command="load" file="$(find dwa)/sim.yaml"/>
    </node>

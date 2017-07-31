@@ -45,7 +45,7 @@
   <build_depend>roscpp</build_depend>
   <build_depend>rospy</build_depend>
   <build_depend>std_msgs</build_depend>
-  <build_depend>map</build_depend>
+  <build_depend>costmap</build_depend>
   <build_depend>visualization_msgs</build_depend>
   <build_depend>tf</build_depend>
   <run_depend>geometry_msgs</run_depend>
@@ -54,7 +54,7 @@
   <run_depend>rospy</run_depend>
   <run_depend>std_msgs</run_depend>
   <run_depend>visualization_msgs</run_depend>
-  <run_depend>map</run_depend>
+  <run_depend>costmap</run_depend>
   <run_depend>tf</run_depend>
 
 

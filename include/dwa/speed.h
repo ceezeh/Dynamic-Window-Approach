@@ -1,7 +1,7 @@
 #ifndef SPEED_H
 #define SPEED_H
-#include <map/helper.h>
-#define MAX_LIN_VEL 0.2 //m/s
+#include <costmap/helper.h>
+#define MAX_LIN_VEL 0.3 //m/s
 #define MIN_LIN_VEL 0.3 //m/s
 
 #define MAX_ANG_VEL .7 //rads/s

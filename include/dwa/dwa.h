@@ -20,20 +20,20 @@
 
 #include <math.h>
 #include <numeric>
-#include "dwa/pose.h"
+#include <costmap/pose.h>
 #include "dwa/speed.h"
 #include "dwa/helper.h"
 #include "dwa/distance.h"
 #include "dwa/concurrent_vector.h"
-#include <map/mapcontainer.h>
+#include <costmap/mapcontainer.h>
 #include <string>
 #define INVALIDCMD -2
-#define SAFEZONE .01 // This defines the safezone for DWA within which clearance is always zero.
+#define SAFEZONE .1 // This defines the safezone for DWA within which clearance is always zero.
 const float NULLDIST = -1;
 //const int NULLSTEP = -1;
 using namespace std;
 using namespace mapcontainer;
-#define ANG_STEP  0.2243994753
+#define ANG_STEP  0.3926990817
 
 class DWA {
 public:
@@ -44,10 +44,17 @@ protected:
 	ros::NodeHandle n;
 	float dt;
 	nav_msgs::Odometry odom_all;
+	Pose odom_offset;
+	bool firstOdom;
 	const Pose& getGoalPose() const {
 		return goalPose;
 	}
 
+	void getCurrentPose(Pose& p) {
+		p.x = this->dwa_map->getMap().info.origin.position.x;
+		p.y = this->dwa_map->getMap().info.origin.position.y;
+		p.th = getYaw(this->dwa_map->getMap().info.origin.orientation);
+	}
 	int DATA_COMPLETE;
 	int dataflag;
 	string topic; // Namespace for yaml variables.
@@ -67,6 +74,7 @@ private:
 	MapContainerPtr dwa_map;
 	Pose goalPose;
 	WCDimensionsPtr wcDimensions;
+//	ros::ServiceClient occ_client;
 //----------------- Motor Variables ---------------
 	Speed odom;
 
@@ -74,12 +82,12 @@ private:
 
 	ros::Publisher command_pub;
 
-	ros::Subscriber odom_sub;
+	ros::Subscriber velocity_sub;
 	ros::Subscriber occupancy_sub;
 	ros::Subscriber goalPose_sub;
 
 	void occupancyCallback(const nav_msgs::OccupancyGrid& og);
-	void odomCallback(const nav_msgs::Odometry& cmd);
+	void velocityCallback(const nav_msgs::Odometry& cmd);
 	void goalPoseCallback(const geometry_msgs::Pose& p);
 // ----------------------WC Kinematics------------------------
 	float acc_lim_v, acc_lim_w;

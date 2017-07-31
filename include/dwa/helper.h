@@ -11,10 +11,10 @@
 #include "std_msgs/String.h"
 #include "geometry_msgs/TwistStamped.h"
 #include "nav_msgs/OccupancyGrid.h"
-#include <map/point.h>
-#include <map/helper.h>
+#include <costmap/point.h>
+#include <costmap/helper.h>
 #include "nav_msgs/Odometry.h"
-#include "dwa/pose.h"
+#include <costmap/pose.h>
 #include "dwa/speed.h"
 
 
@@ -31,14 +31,14 @@ float sqrt_approx(float z);
 Speed getRealSpeed(Speed speed_old);
 Speed normaliseSpeed(Speed speed_old);
 template<typename Ty>
-void rotateFromBody(Ty &pose, Pose T);
+void rotateFromBody(Pose T, Ty &pose);
 int getQuadrant(float upper);
 bool isAngleInRegion(float ang, float upper, float lower);
 
 // Assumes pose is to be rotated to a coordinate system with T as origin coordinate.
 
-void rotateFromBody(RealPoint *pose, Pose T);
-void rotateFromBody(IntPoint *pose, Pose T);
+void rotateFromBody(Pose T, RealPoint *pose);
+void rotateFromBody(Pose T, IntPoint *pose);
 //***********************************************************************//
 /*
  * Needed explicit parameters:
@@ -82,7 +82,7 @@ public:
 	void updateOdom(const nav_msgs::Odometry& cmd) {
 		float xt = cmd.pose.pose.position.x;
 		float yt = cmd.pose.pose.position.y;
-		float tht = cmd.pose.pose.position.z;
+		float tht = getYaw(cmd.pose.pose.orientation);
 
 		if (first) {
 			start_pose = Pose(xt, yt, tht);
@@ -110,9 +110,9 @@ public:
 
 	void getAdmissibleDirection(float& upperbound, float& lowerbound) {
 		cout << "velDir" << velDir << endl;
-		upperbound = velDir + M_PI * 90 / 180;
+		upperbound = velDir + M_PI * 70 / 180;
 		upperbound = wraparound(upperbound);
-		lowerbound = velDir - M_PI * 90 / 180;
+		lowerbound = velDir - M_PI * 70 / 180;
 		lowerbound = wraparound(lowerbound);
 	}
 

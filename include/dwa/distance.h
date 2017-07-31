@@ -1,6 +1,6 @@
 #ifndef DISTANCE_H
 #define DISTANCE_H
-#include <map/helper.h>
+#include <costmap/helper.h>
 
 using namespace std;
 struct Distance {

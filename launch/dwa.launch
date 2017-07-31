@@ -1,24 +1,16 @@
 <launch>
-<!--
-  <machine name="wheelchair" address="10.0.0.2" user="root" 
-    env-loader="/opt/ros/indigo/rosenv.sh" default="never" />
--->
-  <machine name="mainrobot" address="mainrobot" user="rock" 
-    env-loader="/home/rock/catkin_ws/devel/env.sh" default="never" />
- 
-  <machine name="remote" address="remote" user="ceezeh" 
-    env-loader="/home/ceezeh/catkin_ws/devel/env.sh" default="never" />
-  <!--
+
+  <machine name="mainrobot" address="mainrobotEth" user="wheelchair" 
+    env-loader="/home/wheelchair/catkin_ws/rosenv.sh" default="never" timeout="20"/>
+ <!--
   <node pkg="wheelchairtest" type="sonarsim" name="sonarsim"  machine="mainrobot" />
  -->
-  <node pkg="map" type="local_map" name="local_map" machine="mainrobot" output="screen" required="true" >
-  	<rosparam command="load" file="$(find map)/mymap.yaml" />
-  </node> 
+ 
+ <include file="$(find costmap)/launch/sonar_map.launch"/>
 
-<!--
  <node pkg="dwa" type="run_dwa" name="dwa" machine="mainrobot"  output="screen" >
      <rosparam command="load" file="$(find dwa)/dwa.yaml"/>
+     <rosparam command="load" file="$(find costmap)/map.yaml"/>
    </node>
--->
-  
+   
 </launch>

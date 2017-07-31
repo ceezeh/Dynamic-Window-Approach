@@ -11,7 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   visualization_msgs
-  map
+  costmap
   tf
 )
 
@@ -195,9 +195,11 @@ include_directories(include ${catkin_INCLUDE_DIRS} ${maphelper_INCLUDE_DIRS})
 
 add_library(dwa src/helper.cpp src/dwa.cpp)
 target_link_libraries(dwa ${catkin_LIBRARIES} ${maphelper_LIBRARIES})
+add_dependencies(dwa costmap_gencpp)
 
 add_executable(run_dwa src/main.cpp)
 target_link_libraries(run_dwa dwa )
+
 
 install(TARGETS dwa
 	ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

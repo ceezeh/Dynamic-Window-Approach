@@ -1,7 +1,7 @@
 #include "dwa/helper.h"
 using namespace std;
 float DeOscillator::lin_dist_thres = .5;
-float DeOscillator::ang_dist_thres_lower = M_PI * 30 / 180;
+float DeOscillator::ang_dist_thres_lower = M_PI * 60 / 180;
 float DeOscillator::ang_dist_thres_upper = M_PI * 150 / 180;
 // ---------------Trigonometry----------------------
 //float angDiff(float a1, float a2) {
@@ -44,7 +44,7 @@ float sqrt_approx(float z) {
 
 	return *(float*) &val_int; /* Interpret again as float */
 }
-void rotateFromBody(RealPoint *pose, Pose T) {
+void rotateFromBody(Pose T, RealPoint *pose) {
 	float x = pose->x;
 	float y = pose->y;
 
@@ -55,7 +55,7 @@ void rotateFromBody(RealPoint *pose, Pose T) {
 	pose->y = y2 + T.y;
 }
 
-void rotateFromBody(IntPoint *pose, Pose T) {
+void rotateFromBody(Pose T, IntPoint *pose) {
 	float x = pose->x;
 	float y = pose->y;
 
