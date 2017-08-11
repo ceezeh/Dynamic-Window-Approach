@@ -12,8 +12,8 @@
 #include <numeric>
 #include <costmap/helper.h>
 #include "dwa/dwa.h"
+#include "costmap/escapevelocity.h"
 #include <chrono>
-#include "costmap/checkoccupancy.h"
 
 #define DEBUG
 //#define USER_CMD_BIT 2
@@ -58,7 +58,7 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	this->n.getParam(dtStr.c_str(), dt);
 
 	//	 TODO: Verify these parameters.
-	horizon = 20; // 10 seconds
+	horizon = 60; // 10 seconds
 	refresh_period = 0; // 1 / dt;
 
 	string acc_lim_v_str = ns + "/acc_lim_v";
@@ -156,7 +156,7 @@ float DWA::computeHeading(Speed candidateSpeed, Pose goal) {
 	Pose currentPose;
 	this->getCurrentPose(currentPose);
 	float velHeading = atan2(candidateSpeed.w, candidateSpeed.v);
-	float headingToGoal = angDiff( goal.th, currentPose.th);
+	float headingToGoal = angDiff(goal.th, currentPose.th);
 	bool front = this->deOscillator.isFront();
 	float heading;
 	if (front) {
@@ -229,7 +229,18 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed, int i) {
 Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 	// Compute rectangular dimension depicting wheelchair in  occupancy map.
 	// Compute and normalize clearance.
-	bool isEscapeTraj = true;
+
+//	if (equals(candidateSpeed.w, 0)) {
+//		for (int i = 0; i < this->dwa_map->getMap().data.size(); i++) {
+//			if (this->dwa_map->getMap().data[i] > lo_occ_thres) {
+//				int x, y;
+//				this->dwa_map->getOccXY(i, x, y);
+//				cout << "Searching....obstacle found at x=" << x << ",y=" << y
+//						<< endl;
+//			}
+//		}
+//	}
+	bool foundObst = false;
 	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
 	float x, y, th;
 	x = y = th = 0;
@@ -272,6 +283,7 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 		y += dy;
 		th += dth;
 		th = wraparound(th);
+//		cout<<"[Compute Clearance] x="<<x<<",y="<<y<<",th="<<th<<", i="<<i<<endl;
 //		timestep = i;
 		if ((fabs(x / dwa_map->getResolution()) > dwa_map->getNoOfGrids() / 2)
 				|| (fabs(y / dwa_map->getResolution())
@@ -283,42 +295,55 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 		// compute only after every 2 seconds into the future.
 
 		Pose pose = Pose(x, y, th);
-		if (i > 1) {
-			bool isObstacle = onObstacle(pose, candidateSpeed);
+		if (i > -1) { //For laser sensor.
+			bool isObstacle = onObstacle(pose, candidateSpeed,
+					(i == 0) ? true : false);
 
 			if (isObstacle) {
+				foundObst = true;
 				break;
 			}
-
 		}
+
 	}
-	float dx = candidateSpeed.v * cos(th) * dt;
-	float dy = candidateSpeed.v * sin(th) * dt;
-	float ds = vectorNorm(Pose(dx, dy));
-	th = fabs(th);
-	if (equals(traj, 0) || equals(traj, M_PI))
-		return Distance(acc, acc + ds, 2 * M_PI);
-	if (equals(fabs(traj), M_PI / 2)) {
-		cout << "@@Using ang dist..." << endl;
-		return Distance(th * 0.55, th * 0.55 + ds, th); // Using Centre to back metric...
-	} else
-		return Distance(acc, acc + ds, th);
+	if (foundObst) {
+		float dx = candidateSpeed.v * cos(th) * dt;
+		float dy = candidateSpeed.v * sin(th) * dt;
+		float ds = vectorNorm(Pose(dx, dy));
+		th = fabs(th);
+		if (equals(traj, 0) || equals(traj, M_PI))
+			return Distance(acc, acc + ds, 2 * M_PI);
+		if (equals(fabs(traj), M_PI / 2)) {
+			if (equals(candidateSpeed.w, 0))
+				cout << "@@Using ang dist..." << endl;
+			return Distance(th * 0.55, th * 0.55 + ds, th); // Using Centre to back metric...
+		} else
+			return Distance(acc, acc + ds, th);
+	} else {
+		return Distance(clearance, clearance, 2 * M_PI);
+	}
 }
 
 /*
  * Checks if there is any obstacle in the occupancy grid to obstruct the
  * wheelchair if its centre where at pose. Returns the location of the obstacles.
  */
-bool DWA::onObstacle(Pose pose, Speed candidateSpeed) {
+bool DWA::onObstacle(Pose pose, Speed candidateSpeed, bool escape = 0) {
 
+	//Temp: List all obstacles
+
+	cout << "Local Wheelchair Pose: [x= " << pose.x << ", y=" << pose.x
+			<< ", th =" << pose.th << "]" << endl;
 //	geometry_msgs::Pose pose = req.pose;
-	float heading = getYaw(dwa_map->getMap().info.origin.orientation);
-	float xt = cos(heading) * pose.x - sin(heading) * pose.y;
-	float yt = sin(heading) * pose.x + cos(heading) * pose.y;
-	pose.x = xt + dwa_map->getMap().info.origin.position.x;
-	pose.y = yt + dwa_map->getMap().info.origin.position.y;
-	pose.th = angAdd(pose.th, heading);
+	Pose currentPose;
+	getCurrentPose(currentPose);
+	RealPoint p = RealPoint(pose.x, pose.y);
+	rotateFromBody(currentPose, &p);
+	pose.x = p.x;
+	pose.y = p.y;
+	pose.th = angAdd(pose.th, currentPose.th);
 
+	EscapeVelocity escapeVelocity = EscapeVelocity(*(this->wcDimensions.get()));
 	for (int k = 0; k < 1; k++) {
 
 		RealPoint topLeft = wcDimensions->getTopLeftCorner1();
@@ -393,6 +418,11 @@ bool DWA::onObstacle(Pose pose, Speed candidateSpeed) {
 		bresenham(bottomLeftInt.x, bottomLeftInt.y, topLeftInt.x, topLeftInt.y,
 				outline);
 
+		cout << "The footplate coordinates: Real[Lx,Ly]=[" << topRight2.x << ","
+				<< topRight2.y << "], Int[Lx,Ly]=[" << topRightInt2.x << ","
+				<< topRightInt2.y << "]Real[Rx,Ry]=[" << bottomRight2.x << ","
+				<< bottomRight2.y << "], Int[Rx,Ry]=[" << bottomRightInt2.x << ","
+				<< bottomRightInt2.y << "]" << endl;
 		for (int i = 0; i < outline.size(); i++) {
 			IntPoint point = outline[i];
 			//			cout << "Probbing Grid.. X:"<<point.x<<", Y: "<<point.y<<endl;
@@ -401,15 +431,42 @@ bool DWA::onObstacle(Pose pose, Speed candidateSpeed) {
 				continue;
 			}
 			if (this->dwa_map->at(point.x, point.y) > lo_occ_thres) {
-				cout << "Probbing...Obstacle found at point [x=" << point.x
-						<< ", y=" << point.y << "]" << endl;
-				return true;
+				RealPoint realPoint;
+				dwa_map->mapToReal(point, &realPoint);
+				cout
+						<< "Probbing...Obstacle found at wheelchair's edge : Realpoint[x="
+						<< realPoint.x << ", y=" << realPoint.y
+						<< "] Intpoint[x=" << point.x << ", y=" << point.y
+						<< "]" << endl << "Current Wheelchair Pose: [x= "
+						<< currentPose.x << ", y=" << currentPose.x << ", th ="
+						<< currentPose.th << "]" << endl;
+//						<<"Wheelchair Pose at Collision: [x= "
+//						<< pose.x << ", y="
+//						<< pose.y << ", th ="
+//						<< pose.th << "]"<<endl;
+
+				//Point in local frame:
+				this->dwa_map->globalToBody(currentPose, &realPoint);
+//				cout << "Obstacle in body frame : Realpoint[x=" << realPoint.x
+//						<< ", y=" << realPoint.y << "]" << endl;
+				// find point in body frame;
+				//Check if should stop now
+				if (!escapeVelocity.isInSafetyZone(realPoint)) {
+					return true;//This seems strange but it is likely correct.
+				}
+				escapeVelocity.updateZones(realPoint);
 
 			}
 		}
 
 	}
-	return false;
+	bool isEscapeVelocity = escapeVelocity.isEscapeVelocity(candidateSpeed);
+
+	if (!isEscapeVelocity) {
+		return true;
+	} else {
+		return false;
+	}
 }
 
 /*
@@ -509,35 +566,35 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 
 #pragma omp parallel for
 	for (int i = 0; i < trajectories.size(); i++) {
-		cout << "Begin! ADMISSIBLE traj" << trajectories[i] << " : [v="
-				<< admissibles[i].v << ",w=" << admissibles[i].w << "]" << endl;
-		cout << "DW lowerbound traj: [v=" << dw.lowerbound.v << ",w="
-				<< dw.lowerbound.w << "]" << endl;
-		cout << "DW upperbound traj: [v=" << dw.upperbound.v << ",w="
-				<< dw.upperbound.w << "]" << endl;
+//		cout << "Begin! ADMISSIBLE traj" << trajectories[i] << " : [v="
+//				<< admissibles[i].v << ",w=" << admissibles[i].w << "]" << endl;
+//		cout << "DW lowerbound traj: [v=" << dw.lowerbound.v << ",w="
+//				<< dw.lowerbound.w << "]" << endl;
+//		cout << "DW upperbound traj: [v=" << dw.upperbound.v << ",w="
+//				<< dw.upperbound.w << "]" << endl;
 		if (front) {
 			if (fabs(trajectories[i]) > (M_PI / 2 + .1)) {
-				cout << "Facing front ignoring trajectory " << endl;
+//				cout << "Facing front ignoring trajectory " << endl;
 				continue;
 			}
 		} else {
 			if (fabs(trajectories[i]) < (M_PI / 2 + .1)) {
-				cout << "Facing back ignoring trajectory " << endl;
+//				cout << "Facing back ignoring trajectory " << endl;
 				continue;
 			}
 		}
 		if (!zeroVisited) {
 			resultantVelocities.emplace_back(0, 0);
-			cout << "Emplacing resultant traj: [v=" << 0 << ",w=" << 0 << endl;
+//			cout << "Emplacing resultant traj: [v=" << 0 << ",w=" << 0 << endl;
 			zeroVisited = true;
 		}
 //		cout << "Trajectory Heading : " << trajectories[i] << endl;
 		if (!isAngleInRegion(trajectories[i], upperbound, lowerbound)) {
-			cout << "Trajectory not in angle range " << endl;
+//			cout << "Trajectory not in angle range " << endl;
 			continue;
 		}
 
-		cout << "Passed trajectory Heading : " << trajectories[i] << endl;
+//		cout << "Passed trajectory Heading : " << trajectories[i] << endl;
 		// for very large tan, the data becomes skewed so just use the dw as boundary
 		//Here trajectory is either pi/2 or -PI/2
 		if (equals(abs(trajectories[i]), M_PI / 2)) {
@@ -572,11 +629,11 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 					if (isAngleInRegion(atan2(w, vel), upperbound,
 							lowerbound)) {
 						resultantVelocities.emplace_back(vel, w);
-						cout << "Emplacing resultant traj: [v=" << vel << ",w="
-								<< w << endl;
+//						cout << "Emplacing resultant traj: [v=" << vel << ",w="
+//								<< w << endl;
 					} else {
-						cout << "Skipped traj: [v=" << vel << ",w=" << w
-								<< endl;
+//						cout << "Skipped traj: [v=" << vel << ",w=" << w
+//								<< endl;
 					}
 				}
 			}
@@ -622,9 +679,9 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 				}
 				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound)) {
 					resultantVelocities.emplace_back(vel, w);
-					cout << "rResultant traj: [v=" << vel << ",w=" << w << endl;
+//					cout << "rResultant traj: [v=" << vel << ",w=" << w << endl;
 				} else {
-					cout << "Skipped traj: [v=" << vel << ",w=" << w << endl;
+//					cout << "Skipped traj: [v=" << vel << ",w=" << w << endl;
 				}
 			}
 			continue;
@@ -670,9 +727,9 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 				}
 				if (isAngleInRegion(atan2(w, vel), upperbound, lowerbound)) {
 					resultantVelocities.emplace_back(vel, w);
-					cout << "rResultant traj: [v=" << vel << ",w=" << w << endl;
+//					cout << "rResultant traj: [v=" << vel << ",w=" << w << endl;
 				} else {
-					cout << "Skipped traj: [v=" << vel << ",w=" << w << endl;
+//					cout << "Skipped traj: [v=" << vel << ",w=" << w << endl;
 				}
 			}
 
@@ -686,7 +743,7 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 //				resultantVelocities[i].w);
 //	}
 //	ROS_INFO("Printing resultant velocities ended\n");
-	cout << "END" << endl;
+//	cout << "END" << endl;
 	return resultantVelocities;
 }
 
@@ -804,7 +861,7 @@ void DWA::getData() {
 
 void DWA::updateGoalPose(Pose goal, float dir) {
 	if (!(goal == goalPose)) {
-		cout << "NEW Goal" << endl;
+//		cout << "NEW Goal" << endl;
 		Pose currentPose = Pose(this->dwa_map->getMap().info.origin.position.x,
 				this->dwa_map->getMap().info.origin.position.y,
 				getYaw(this->dwa_map->getMap().info.origin.orientation));
@@ -824,6 +881,7 @@ void DWA::run() {
 	while (ros::ok()) {
 		timer.start();
 		getData();
+
 		chosenSpeed = this->computeNextVelocity(chosenSpeed);
 		timer.stop();
 

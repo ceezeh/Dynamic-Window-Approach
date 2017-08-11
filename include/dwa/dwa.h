@@ -28,7 +28,7 @@
 #include <costmap/mapcontainer.h>
 #include <string>
 #define INVALIDCMD -2
-#define SAFEZONE .1 // This defines the safezone for DWA within which clearance is always zero.
+#define SAFEZONE .17 // T17is defines the safezone for DWA within which clearance is always zero.
 const float NULLDIST = -1;
 //const int NULLSTEP = -1;
 using namespace std;
@@ -122,7 +122,7 @@ protected:
 	float computeHeading(Speed candidateSpeed, Pose goal);
 	float computeClearance(Speed candidateSpeed);
 
-	bool onObstacle(Pose pose, Speed);
+	bool onObstacle(Pose pose, Speed, bool);
 	float computeVelocity(Speed candidateSpeed);
 	virtual void getData();
 	concurrent_vector<Speed> getResultantVelocities(
