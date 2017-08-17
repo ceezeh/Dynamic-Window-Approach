@@ -3,10 +3,10 @@
   <machine name="remote" address="remote" user="ceezeh" 
     env-loader="/home/ceezeh/catkin_ws/devel/env.sh" default="never" />
 
-
+<include file="$(find wheelchairtest)/launch/agent.launch"/>
 <include file="$(find costmap)/launch/sim_map.launch"/>
     
- <node pkg="dwa" type="dwa" name="dwa"  output="screen" >
+ <node pkg="dwa" type="dwagen" name="dwagen"  output="screen" >
      <rosparam command="load" file="$(find costmap)/map.yaml"/>
      <rosparam command="load" file="$(find dwa)/dwa.yaml"/>
 	 <rosparam command="load" file="$(find dwa)/sim.yaml"/>

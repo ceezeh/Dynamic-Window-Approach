@@ -22,16 +22,21 @@
 #define INVALID_DIR -12
 using namespace std;
 
-float vectorNorm(Pose p);
-int getQuadrant(float upper);
-float vectorNorm(Pose p);
+template<typename T>
+float vectorNorm(T p) {
+	std::vector<float> v { p.x, p.y };
+	float res = inner_product(v.begin(), v.end(), v.begin(), 0.0f);
+	return sqrt(res);
+}
+
 float vectorNorm(Speed p);
+int getQuadrant(float upper);
 float magSquared(Speed p);
 float sqrt_approx(float z);
 Speed getRealSpeed(Speed speed_old);
 Speed normaliseSpeed(Speed speed_old);
 template<typename Ty>
-void rotateFromBody(Pose T, Ty &pose);
+void rotateFromBody(Pose T, Ty *pose);
 int getQuadrant(float upper);
 bool isAngleInRegion(float ang, float upper, float lower);
 
@@ -39,6 +44,7 @@ bool isAngleInRegion(float ang, float upper, float lower);
 
 void rotateFromBody(Pose T, RealPoint *pose);
 void rotateFromBody(Pose T, IntPoint *pose);
+void toBodyFrame(Pose T, RealPoint &pose);
 //***********************************************************************//
 /*
  * Needed explicit parameters:

@@ -10,11 +10,6 @@ float DeOscillator::ang_dist_thres_upper = M_PI * 150 / 180;
 //	return wraparound(a);
 //}
 
-float vectorNorm(Pose p) {
-	std::vector<float> v { p.x, p.y };
-	float res = inner_product(v.begin(), v.end(), v.begin(), 0.0f);
-	return sqrt(res);
-}
 float vectorNorm(Speed p) {
 	return sqrt(magSquared(p));
 }
@@ -51,7 +46,7 @@ void rotateFromBody(Pose T, RealPoint *pose) {
 	float x2 = cos(T.th) * x - sin(T.th) * y;
 	float y2 = sin(T.th) * x + cos(T.th) * y;
 
-	pose->x = x2+ T.x;
+	pose->x = x2 + T.x;
 	pose->y = y2 + T.y;
 }
 
@@ -62,8 +57,16 @@ void rotateFromBody(Pose T, IntPoint *pose) {
 	float x2 = cos(T.th) * x - sin(T.th) * y;
 	float y2 = sin(T.th) * x + cos(T.th) * y;
 
-	pose->x = int(x2+ T.x+0.5);
-	pose->y = int(y2 + T.y+0.5);
+	pose->x = int(x2 + T.x + 0.5);
+	pose->y = int(y2 + T.y + 0.5);
+}
+void toBodyFrame(Pose T, RealPoint &pose) {
+	float x = pose.x - T.x;
+	float y = pose.y - T.y;
+
+	pose.x = cos(-T.th) * x - sin(-T.th) * y;
+	pose.y = sin(-T.th) * x + cos(-T.th) * y;
+
 }
 // inverse of normalise speed.
 Speed getRealSpeed(Speed speed_old) {
@@ -96,8 +99,6 @@ Speed normaliseSpeed(Speed speed_old) {
 	return speed;
 }
 
-
-
 ////Assumes lower to upper forms a continuous region.
 //float wraparound (float ang) { // [-pi, pi]
 //    if (equals(ang, 0) || equals(fabs(ang), M_PI)) return ang;
@@ -111,18 +112,19 @@ Speed normaliseSpeed(Speed speed_old) {
 //    return wraparound(ang);
 //}
 bool isAngleInRegion(float ang, float upper, float lower) {
-    upper = wraparound(upper);
-    lower = wraparound(lower);
-    ang = wraparound(ang);
-    bool wrapped = false;
-    if (upper < lower) { // wraparound has occurred.
-        upper += 2*M_PI;
-        wrapped = true;
-    }
-    if ((ang < 0)&&wrapped) ang+=2*M_PI;
-    if ((upper>= ang ) &&(lower<=ang)) {
-        return true;
-    } else {
-        return false;
-    }
+	upper = wraparound(upper);
+	lower = wraparound(lower);
+	ang = wraparound(ang);
+	bool wrapped = false;
+	if (upper < lower) { // wraparound has occurred.
+		upper += 2 * M_PI;
+		wrapped = true;
+	}
+	if ((ang < 0) && wrapped)
+		ang += 2 * M_PI;
+	if ((upper >= ang) && (lower <= ang)) {
+		return true;
+	} else {
+		return false;
+	}
 }

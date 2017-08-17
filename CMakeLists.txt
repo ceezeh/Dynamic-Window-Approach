@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(dwa)
-set(CMAKE_CXX_FLAGS "-std=c++0x -O0 ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "-std=c++0x -O3 ${CMAKE_CXX_FLAGS}")
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
@@ -16,8 +16,9 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+ find_package(Boost REQUIRED COMPONENTS system)
 
+#find_package ( roboptim-core REQUIRED)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -106,7 +107,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES dwa
+  LIBRARIES dwalib
   CATKIN_DEPENDS geometry_msgs nav_msgs std_msgs
 #  DEPENDS system_lib
 )
@@ -123,7 +124,7 @@ include_directories(
 )
 
 ## Declare a C++ library
-# add_library(dwa
+# add_library(dwalib
 #   src/${PROJECT_NAME}/dwa.cpp
 # )
 
@@ -193,15 +194,18 @@ include_directories(
 # catkin_add_nosetests(test)
 include_directories(include ${catkin_INCLUDE_DIRS} ${maphelper_INCLUDE_DIRS})
 
-add_library(dwa src/helper.cpp src/dwa.cpp)
-target_link_libraries(dwa ${catkin_LIBRARIES} ${maphelper_LIBRARIES})
-add_dependencies(dwa costmap_gencpp)
+add_library(dwalib src/helper.cpp src/dwa.cpp src/dwa_general.cpp)
+target_link_libraries(dwalib ${catkin_LIBRARIES} ${maphelper_LIBRARIES})
+add_dependencies(dwalib costmap_gencpp)
 
-add_executable(run_dwa src/main.cpp)
-target_link_libraries(run_dwa dwa )
+add_executable(dwa src/main.cpp)
+target_link_libraries(dwa dwalib )
+
+add_executable(dwagen src/dwa_gen_main.cpp src/dwa_general.cpp)
+target_link_libraries(dwagen dwalib )
 
 
-install(TARGETS dwa
+install(TARGETS dwalib
 	ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 	LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 	RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION})

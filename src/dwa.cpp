@@ -58,7 +58,7 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	this->n.getParam(dtStr.c_str(), dt);
 
 	//	 TODO: Verify these parameters.
-	horizon = 60; // 10 seconds
+	horizon = 20; // 10 seconds
 	refresh_period = 0; // 1 / dt;
 
 	string acc_lim_v_str = ns + "/acc_lim_v";
@@ -75,8 +75,13 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 
 	// WC kinematics
 
-	max_trans_vel = MAX_LIN_VEL;
-	min_trans_vel = -MIN_LIN_VEL;
+	if (isSim) {
+		max_trans_vel = .4;
+		min_trans_vel = -.4;
+	} else {
+		max_trans_vel = MAX_LIN_VEL;
+		min_trans_vel = -MIN_LIN_VEL;
+	}
 	max_rot_vel = MAX_ANG_VEL;
 	min_rot_vel = -MIN_ANG_VEL;
 	// WC dimensions.
@@ -91,7 +96,7 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	deOscillator = DeOscillator();
 	deOscillator.changeDir(Pose(0, 0), goalPose);
 	// ROS
-	DATA_COMPLETE = 1;
+	DATA_COMPLETE = 3;
 	wcDimensions = WCDimensionsPtr(new WCDimensions(&n, topic_t));
 	string cmd_topic_name = ns + "/cmd_topic";
 	string cmd_topic;
@@ -201,7 +206,7 @@ float DWA::computeClearance(Speed candidateSpeed) {
 //	int dummy;
 	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
 	int ind = getClearanceIndex(traj);
-	if (ind == 28)
+	if (ind == trajectories.size())
 		ind = 0;
 	Distance dist = computeDistToNearestObstacle(candidateSpeed, ind);
 	cout << "Traj= " << traj << ", Index= " << ind << endl;
@@ -217,6 +222,7 @@ float DWA::computeClearance(Speed candidateSpeed) {
 	return clearance; /*As done in Pablo et al*/
 
 }
+
 Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed, int i) {
 
 	if (distFromObstacle[i].clearance != NULLDIST) {
@@ -332,8 +338,8 @@ bool DWA::onObstacle(Pose pose, Speed candidateSpeed, bool escape = 0) {
 
 	//Temp: List all obstacles
 
-	cout << "Local Wheelchair Pose: [x= " << pose.x << ", y=" << pose.x
-			<< ", th =" << pose.th << "]" << endl;
+//	cout << "Local Wheelchair Pose: [x= " << pose.x << ", y=" << pose.x
+//			<< ", th =" << pose.th << "]" << endl;
 //	geometry_msgs::Pose pose = req.pose;
 	Pose currentPose;
 	getCurrentPose(currentPose);
@@ -417,12 +423,12 @@ bool DWA::onObstacle(Pose pose, Speed candidateSpeed, bool escape = 0) {
 				bottomLeftInt.y, outline);
 		bresenham(bottomLeftInt.x, bottomLeftInt.y, topLeftInt.x, topLeftInt.y,
 				outline);
-
-		cout << "The footplate coordinates: Real[Lx,Ly]=[" << topRight2.x << ","
-				<< topRight2.y << "], Int[Lx,Ly]=[" << topRightInt2.x << ","
-				<< topRightInt2.y << "]Real[Rx,Ry]=[" << bottomRight2.x << ","
-				<< bottomRight2.y << "], Int[Rx,Ry]=[" << bottomRightInt2.x << ","
-				<< bottomRightInt2.y << "]" << endl;
+//
+//		cout << "The footplate coordinates: Real[Lx,Ly]=[" << topRight2.x << ","
+//				<< topRight2.y << "], Int[Lx,Ly]=[" << topRightInt2.x << ","
+//				<< topRightInt2.y << "]Real[Rx,Ry]=[" << bottomRight2.x << ","
+//				<< bottomRight2.y << "], Int[Rx,Ry]=[" << bottomRightInt2.x << ","
+//				<< bottomRightInt2.y << "]" << endl;
 		for (int i = 0; i < outline.size(); i++) {
 			IntPoint point = outline[i];
 			//			cout << "Probbing Grid.. X:"<<point.x<<", Y: "<<point.y<<endl;
@@ -433,17 +439,17 @@ bool DWA::onObstacle(Pose pose, Speed candidateSpeed, bool escape = 0) {
 			if (this->dwa_map->at(point.x, point.y) > lo_occ_thres) {
 				RealPoint realPoint;
 				dwa_map->mapToReal(point, &realPoint);
-				cout
-						<< "Probbing...Obstacle found at wheelchair's edge : Realpoint[x="
-						<< realPoint.x << ", y=" << realPoint.y
-						<< "] Intpoint[x=" << point.x << ", y=" << point.y
-						<< "]" << endl << "Current Wheelchair Pose: [x= "
-						<< currentPose.x << ", y=" << currentPose.x << ", th ="
-						<< currentPose.th << "]" << endl;
-//						<<"Wheelchair Pose at Collision: [x= "
-//						<< pose.x << ", y="
-//						<< pose.y << ", th ="
-//						<< pose.th << "]"<<endl;
+//				cout
+//						<< "Probbing...Obstacle found at wheelchair's edge : Realpoint[x="
+//						<< realPoint.x << ", y=" << realPoint.y
+//						<< "] Intpoint[x=" << point.x << ", y=" << point.y
+//						<< "]" << endl << "Current Wheelchair Pose: [x= "
+//						<< currentPose.x << ", y=" << currentPose.x << ", th ="
+//						<< currentPose.th << "]" << endl;
+////						<<"Wheelchair Pose at Collision: [x= "
+////						<< pose.x << ", y="
+////						<< pose.y << ", th ="
+////						<< pose.th << "]"<<endl;
 
 				//Point in local frame:
 				this->dwa_map->globalToBody(currentPose, &realPoint);

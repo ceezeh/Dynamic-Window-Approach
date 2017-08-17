@@ -28,7 +28,9 @@
 #include <costmap/mapcontainer.h>
 #include <string>
 #define INVALIDCMD -2
+#ifndef SAFEZONE
 #define SAFEZONE .17 // T17is defines the safezone for DWA within which clearance is always zero.
+#endif
 const float NULLDIST = -1;
 //const int NULLSTEP = -1;
 using namespace std;
@@ -38,6 +40,7 @@ using namespace mapcontainer;
 class DWA {
 public:
 	DWA(const char * topic, ros::NodeHandle &n_t);
+//	virtual ~DWA(){}
 	void run();
 
 protected:
@@ -50,7 +53,7 @@ protected:
 		return goalPose;
 	}
 
-	void getCurrentPose(Pose& p) {
+	virtual void getCurrentPose(Pose& p) {
 		p.x = this->dwa_map->getMap().info.origin.position.x;
 		p.y = this->dwa_map->getMap().info.origin.position.y;
 		p.th = getYaw(this->dwa_map->getMap().info.origin.orientation);
@@ -64,19 +67,11 @@ private:
 		return (ang + M_PI ) / ANG_STEP +.2;
 	}
 	vector<Distance> distFromObstacle;
-	// -----------Occupancy Grid Variables-------------------
-	/*
-	 * The goalstep is a measure used for our distribution to
-	 * determine the resolution of our speed distribution measured
-	 * in degrees on an Argand chart of w against v.
-	 */
-	float refresh_period; // rate at which we evaluate prediction as measures in counts representing time in seconds
-	MapContainerPtr dwa_map;
+
 	Pose goalPose;
 	WCDimensionsPtr wcDimensions;
 //	ros::ServiceClient occ_client;
-//----------------- Motor Variables ---------------
-	Speed odom;
+
 
 //-------------------ROS-----------------------
 
@@ -108,7 +103,7 @@ private:
 	 * argand chart are stored as trajectory parameters.
 	 */
 	vector<float> trajectories;
-	Distance computeDistToNearestObstacle(Speed traj);
+	virtual Distance computeDistToNearestObstacle(Speed traj);
 	Distance computeDistToNearestObstacle(Speed traj, int);
 //	float computeDistToNearestObstacle(Speed candidateSpeed, int &timestep);
 	concurrent_vector<Speed> getAdmissibleVelocities(
@@ -118,6 +113,16 @@ private:
 
 // Assuming const time horizon as goal.
 protected:
+	//----------------- Motor Variables ---------------
+		Speed odom;
+	// -----------Occupancy Grid Variables-------------------
+	/*
+	 * The goalstep is a measure used for our distribution to
+	 * determine the resolution of our speed distribution measured
+	 * in degrees on an Argand chart of w against v.
+	 */
+	float refresh_period; // rate at which we evaluate prediction as measures in counts representing time in seconds
+	MapContainerPtr dwa_map;
 	float horizon; // time steps in the future.
 	float computeHeading(Speed candidateSpeed, Pose goal);
 	float computeClearance(Speed candidateSpeed);
