@@ -29,7 +29,7 @@
 #include <string>
 #define INVALIDCMD -2
 #ifndef SAFEZONE
-#define SAFEZONE .17 // T17is defines the safezone for DWA within which clearance is always zero.
+#define SAFEZONE .10 // T17is defines the safezone for DWA within which clearance is always zero.
 #endif
 const float NULLDIST = -1;
 //const int NULLSTEP = -1;
@@ -64,14 +64,13 @@ protected:
 
 private:
 	int getClearanceIndex(float ang) {
-		return (ang + M_PI ) / ANG_STEP +.2;
+		return (ang + M_PI) / ANG_STEP + .2;
 	}
-	vector<Distance> distFromObstacle;
+
 
 	Pose goalPose;
-	WCDimensionsPtr wcDimensions;
-//	ros::ServiceClient occ_client;
 
+//	ros::ServiceClient occ_client;
 
 //-------------------ROS-----------------------
 
@@ -84,14 +83,7 @@ private:
 	void occupancyCallback(const nav_msgs::OccupancyGrid& og);
 	void velocityCallback(const nav_msgs::Odometry& cmd);
 	void goalPoseCallback(const geometry_msgs::Pose& p);
-// ----------------------WC Kinematics------------------------
-	float acc_lim_v, acc_lim_w;
-	float decc_lim_v, decc_lim_w;
-	float max_trans_vel, min_trans_vel;
-	float max_rot_vel, min_rot_vel;
 
-
-	float vstep, wstep;
 	/*
 	 * These parameters are used for accessing the right back side of the wheelchair
 	 * as the start position to fill or check occupancy.
@@ -113,8 +105,17 @@ private:
 
 // Assuming const time horizon as goal.
 protected:
+	// ----------------------WC Kinematics------------------------
+	float acc_lim_v, acc_lim_w;
+	float decc_lim_v, decc_lim_w;
+	float max_trans_vel, min_trans_vel;
+	float max_rot_vel, min_rot_vel;
+
+	float vstep, wstep;
+	WCDimensionsPtr wcDimensions;
+	vector<Distance> distFromObstacle;
 	//----------------- Motor Variables ---------------
-		Speed odom;
+	Speed odom;
 	// -----------Occupancy Grid Variables-------------------
 	/*
 	 * The goalstep is a measure used for our distribution to
@@ -139,7 +140,7 @@ protected:
 			Speed inputcmd);
 
 	void updateGoalPose(Pose goal, float dir = INVALID_DIR);
-
+	void adjustMaxSpeed();
 }
 ;
 

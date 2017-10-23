@@ -17,7 +17,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
  find_package(Boost REQUIRED COMPONENTS system)
-
+ find_package(OpenCV REQUIRED)
 #find_package ( roboptim-core REQUIRED)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -192,10 +192,10 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
-include_directories(include ${catkin_INCLUDE_DIRS} ${maphelper_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} ${maphelper_INCLUDE_DIRS} ${OpenCV_INCUDE_DIRS})
 
 add_library(dwalib src/helper.cpp src/dwa.cpp src/dwa_general.cpp)
-target_link_libraries(dwalib ${catkin_LIBRARIES} ${maphelper_LIBRARIES})
+target_link_libraries(dwalib ${catkin_LIBRARIES} ${maphelper_LIBRARIES} ${OpenCV_LIBRARIES})
 add_dependencies(dwalib costmap_gencpp)
 
 add_executable(dwa src/main.cpp)

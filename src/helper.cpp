@@ -1,8 +1,8 @@
 #include "dwa/helper.h"
 using namespace std;
-float DeOscillator::lin_dist_thres = .5;
-float DeOscillator::ang_dist_thres_lower = M_PI * 60 / 180;
-float DeOscillator::ang_dist_thres_upper = M_PI * 150 / 180;
+float DeOscillator::lin_dist_thres = .1;
+float DeOscillator::ang_dist_thres_lower = M_PI * 10 / 180;
+float DeOscillator::ang_dist_thres_upper = M_PI * 110 / 180;
 // ---------------Trigonometry----------------------
 //float angDiff(float a1, float a2) {
 //	float a = a1 - a2;

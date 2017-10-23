@@ -17,7 +17,6 @@
 #include <costmap/pose.h>
 #include "dwa/speed.h"
 
-
 #define NULL_POSE Pose(0,0,0)
 #define INVALID_DIR -12
 using namespace std;
@@ -60,7 +59,6 @@ typedef enum {
 
 //***********************************************************************//
 
-
 //***********************************************************************//
 struct DynamicWindow {
 	Speed upperbound;
@@ -102,13 +100,11 @@ public:
 //					&& (ang_dist < ang_dist_thres_upper)
 				)) {
 			start_pose = Pose(xt, yt, tht);
-			if (front) {
-				velDir = atan2(cmd.twist.twist.angular.z,
-						cmd.twist.twist.linear.x);
-			} else {
-				velDir = atan2(-cmd.twist.twist.angular.z,
-						cmd.twist.twist.linear.x);
-			}
+//			if (front) {
+			velDir = atan2(cmd.twist.twist.angular.z, cmd.twist.twist.linear.x);
+//			} else {
+//				velDir = atan2(-cmd.twist.twist.angular.z, cmd.twist.twist.linear.x);
+//			}
 			cout << "NEW DIRECTION" << endl;
 		}
 
@@ -116,23 +112,26 @@ public:
 
 	void getAdmissibleDirection(float& upperbound, float& lowerbound) {
 		cout << "velDir" << velDir << endl;
-		upperbound = velDir + M_PI * 70 / 180;
+		upperbound = velDir + M_PI * 90 / 180;
 		upperbound = wraparound(upperbound);
-		lowerbound = velDir - M_PI * 70 / 180;
+		lowerbound = velDir - M_PI * 90 / 180;
 		lowerbound = wraparound(lowerbound);
 	}
 
 	// This is called only once anytime the goal pose changes.
-	void changeDir(Pose currPose, Pose goalPose, float dir= INVALID_DIR) {
+	void changeDir(Pose currPose, Pose goalPose, float dir = INVALID_DIR) {
 		float bearing = currPose.bearingToPose(goalPose);
 		float trueBearing = angDiff(currPose.th, bearing);
 		bool front_t = true;
-		if (fabs(trueBearing) > (M_PI / 2 +.1)) {
+		int sign = -1;
+		if (front) sign = 1;
+		if (fabs(trueBearing) > (M_PI / 2 +sign*.1)) {
 			front_t = false;
 		}
 
 		cout << "Computing dir.... bearingToGoal: " << bearing
-				<< ", true bearing: " << trueBearing << ". current th: "<<currPose.th<<endl;
+				<< ", true bearing: " << trueBearing << ". current th: "
+				<< currPose.th << endl;
 		if (dir != INVALID_DIR) {
 			velDir = dir;
 		}

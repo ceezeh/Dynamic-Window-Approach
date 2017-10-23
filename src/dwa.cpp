@@ -12,7 +12,7 @@
 #include <numeric>
 #include <costmap/helper.h>
 #include "dwa/dwa.h"
-#include "costmap/escapevelocity.h"
+#include "dwa/escapevelocity.h"
 #include <chrono>
 
 #define DEBUG
@@ -58,7 +58,7 @@ DWA::DWA(const char * topic_t, ros::NodeHandle &n_t) :
 	this->n.getParam(dtStr.c_str(), dt);
 
 	//	 TODO: Verify these parameters.
-	horizon = 20; // 10 seconds
+	horizon = 30; // 10 seconds
 	refresh_period = 0; // 1 / dt;
 
 	string acc_lim_v_str = ns + "/acc_lim_v";
@@ -161,14 +161,14 @@ float DWA::computeHeading(Speed candidateSpeed, Pose goal) {
 	Pose currentPose;
 	this->getCurrentPose(currentPose);
 	float velHeading = atan2(candidateSpeed.w, candidateSpeed.v);
-	float headingToGoal = angDiff(goal.th, currentPose.th);
+	float headingToGoal = currentPose.bearingToPose(goal);
 	bool front = this->deOscillator.isFront();
 	float heading;
-	if (front) {
+//	if (front) {
 		heading = M_PI - angDiff(headingToGoal, velHeading);
-	} else {
-		heading = -angDiff(headingToGoal, velHeading);
-	}
+//	} else {
+//		heading = -angDiff(headingToGoal, velHeading);
+//	}
 	/*
 	 * normalise the test speed as well.
 	 * Here we are asking what speed would closely match the user's
@@ -200,16 +200,22 @@ float DWA::computeHeading(Speed candidateSpeed, Pose goal) {
 
 float DWA::computeClearance(Speed candidateSpeed) {
 	// clearance is normalised to [0,1] by d
-	if (candidateSpeed == Speed(0, 0)) {
-		return 1;
-	}
+
 //	int dummy;
+	int ind;
 	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
-	int ind = getClearanceIndex(traj);
-	if (ind == trajectories.size())
+	if (ind == trajectories.size()) {
 		ind = 0;
+	}
+	if (candidateSpeed == Speed(0, 0)) {
+		ind = this->distFromObstacle.size() - 1;
+	} else {
+
+		ind = getClearanceIndex(traj);
+	}
+
 	Distance dist = computeDistToNearestObstacle(candidateSpeed, ind);
-	cout << "Traj= " << traj << ", Index= " << ind << endl;
+	// cout << "Traj= " << traj << ", Index= " << ind << endl;
 #ifdef DEBUG
 	ROS_INFO("Pre clearance: clearance %f", dist.clearance);
 #endif
@@ -217,8 +223,8 @@ float DWA::computeClearance(Speed candidateSpeed) {
 	// Since clearance is the last time dist is used, we reset it here.
 	float clearance = (dist.clearance < SAFEZONE) ? 0 : dist.clearance / 2.55;// / 2.550;
 //	float ang = (dist.ang<0.05) ? 0 : dist.ang *0.159; // 20 degree safetym
-	if (clearance > 1)
-		clearance = 1;
+//	if (clearance > 1)
+//		clearance = 1;
 	return clearance; /*As done in Pablo et al*/
 
 }
@@ -246,18 +252,27 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 //			}
 //		}
 //	}
+	float clearance = 2.55; // 2.55m is maximum detectable distance by sonar
+	if (candidateSpeed == Speed(0, 0)) {
+		return Distance(clearance, clearance, 2 * M_PI);
+	}
+
 	bool foundObst = false;
 	float traj = atan2(candidateSpeed.w, candidateSpeed.v);
 	float x, y, th;
 	x = y = th = 0;
-	float v = copysign(0.1, candidateSpeed.v);
-	float w = v * tan(traj);
+	if (!deOscillator.isFront()) {
+		th = M_PI;
+	}
+//	float v = copysign(0.1, candidateSpeed.v);
+//	float w = v * tan(traj);
+	float v = fabs(candidateSpeed.v);
+	float w = candidateSpeed.w;
 	if (equals(fabs(traj), M_PI / 2)) {
 		w = copysign(0.2, traj);
 		v = 0;
 	}
 
-	float clearance = 2.55; // 2.55m is maximum detectable distance by sonar
 	int count = refresh_period; // we want 2 seconds = 2/dt counts
 	float acc = 0;
 	for (int i = 0; i < 1; i++) {
@@ -294,13 +309,15 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 		if ((fabs(x / dwa_map->getResolution()) > dwa_map->getNoOfGrids() / 2)
 				|| (fabs(y / dwa_map->getResolution())
 						> dwa_map->getNoOfGrids() / 2)) {
-			cout << "Horizon at edge of localmap!!!" << endl;
+			// cout << "Horizon at edge of localmap!!!" << endl;
 			break;
 		}
 		// the below is expensive to compute so
 		// compute only after every 2 seconds into the future.
 
-		Pose pose = Pose(x, y, th);
+		Pose pose =
+				(deOscillator.isFront()) ?
+						Pose(x, y, th) : Pose(x, y, th - M_PI);
 		if (i > -1) { //For laser sensor.
 			bool isObstacle = onObstacle(pose, candidateSpeed,
 					(i == 0) ? true : false);
@@ -321,8 +338,8 @@ Distance DWA::computeDistToNearestObstacle(Speed candidateSpeed) {
 			return Distance(acc, acc + ds, 2 * M_PI);
 		if (equals(fabs(traj), M_PI / 2)) {
 			if (equals(candidateSpeed.w, 0))
-				cout << "@@Using ang dist..." << endl;
-			return Distance(th * 0.55, th * 0.55 + ds, th); // Using Centre to back metric...
+				// cout << "@@Using ang dist..." << endl;
+				return Distance(th * 0.55, th * 0.55 + ds, th); // Using Centre to back metric...
 		} else
 			return Distance(acc, acc + ds, th);
 	} else {
@@ -429,6 +446,13 @@ bool DWA::onObstacle(Pose pose, Speed candidateSpeed, bool escape = 0) {
 //				<< topRightInt2.y << "]Real[Rx,Ry]=[" << bottomRight2.x << ","
 //				<< bottomRight2.y << "], Int[Rx,Ry]=[" << bottomRightInt2.x << ","
 //				<< bottomRightInt2.y << "]" << endl;
+
+//				cout << "Backside coordinates: Real[Lx,Ly]=[" << topLeft.x << ","
+//				<< topLeft.y << "], Int[Lx,Ly]=[" << topLeftInt.x << ","
+//				<< topLeftInt.y << "]Real[Rx,Ry]=[" << bottomLeft.x << ","
+//				<< bottomLeft.y << "], Int[Rx,Ry]=[" << bottomLeftInt.x
+//				<< "," << bottomLeftInt.y << "]" << endl;
+#pragma parallel simd for
 		for (int i = 0; i < outline.size(); i++) {
 			IntPoint point = outline[i];
 			//			cout << "Probbing Grid.. X:"<<point.x<<", Y: "<<point.y<<endl;
@@ -475,6 +499,127 @@ bool DWA::onObstacle(Pose pose, Speed candidateSpeed, bool escape = 0) {
 	}
 }
 
+void DWA::adjustMaxSpeed() {
+	float maxW = MAX_ANG_VEL;
+	float minW = -MIN_ANG_VEL;
+
+	Pose currentPose;
+	getCurrentPose(currentPose);
+
+	EscapeVelocity escapeVelocity = EscapeVelocity(*(this->wcDimensions.get()));
+#pragma parallel simd for
+	for (int k = 0; k < 5; k++) {
+
+		RealPoint topLeft = wcDimensions->getTopLeftCorner1();
+		RealPoint topRight = wcDimensions->getTopRightCorner1();
+		RealPoint bottomRight = wcDimensions->getBottomRightCorner1();
+		RealPoint bottomLeft = wcDimensions->getBottomLeftCorner1();
+
+		RealPoint topLeft2 = wcDimensions->getTopLeftCorner2();
+		RealPoint topRight2 = wcDimensions->getTopRightCorner2();
+		RealPoint bottomRight2 = wcDimensions->getBottomRightCorner2();
+		RealPoint bottomLeft2 = wcDimensions->getBottomLeftCorner2();
+
+		float delta = k * dwa_map->getResolution();
+		topLeft += RealPoint(-delta, delta);
+		topRight += RealPoint(delta, delta);
+		bottomRight += RealPoint(delta, -delta);
+		bottomLeft += RealPoint(-delta, -delta);
+
+		topLeft2 += RealPoint(delta, delta);
+		topRight2 += RealPoint(delta, delta);
+		bottomRight2 += RealPoint(delta, -delta);
+		bottomLeft2 += RealPoint(delta, -delta);
+		// Transform corners into pose coordinate.
+		rotateFromBody(currentPose, &topLeft);
+		rotateFromBody(currentPose, &topRight);
+		rotateFromBody(currentPose, &bottomLeft);
+		rotateFromBody(currentPose, &bottomRight);
+
+		rotateFromBody(currentPose, &topLeft2);
+		rotateFromBody(currentPose, &topRight2);
+		rotateFromBody(currentPose, &bottomLeft2);
+		rotateFromBody(currentPose, &bottomRight2);
+
+		IntPoint topLeftInt;
+		dwa_map->realToMap(topLeft, topLeftInt);
+		IntPoint topRightInt;
+		dwa_map->realToMap(topRight, topRightInt);
+		IntPoint bottomLeftInt;
+		dwa_map->realToMap(bottomLeft, bottomLeftInt);
+		IntPoint bottomRightInt;
+		dwa_map->realToMap(bottomRight, bottomRightInt);
+		IntPoint topLeftInt2;
+		dwa_map->realToMap(topLeft2, topLeftInt2);
+		IntPoint topRightInt2;
+		dwa_map->realToMap(topRight2, topRightInt2);
+		IntPoint bottomLeftInt2;
+		dwa_map->realToMap(bottomLeft2, bottomLeftInt2);
+		IntPoint bottomRightInt2;
+		dwa_map->realToMap(bottomRight2, bottomRightInt2);
+
+		// Now get the map equivalent of points.
+
+		// Compute the outline of the rectangle.
+
+		vector<IntPoint> outline;
+		bresenham(topLeftInt.x, topLeftInt.y, topRightInt.x, topRightInt.y,
+				outline);
+
+		bresenham(topRightInt.x, topRightInt.y, topLeftInt2.x, topLeftInt2.y,
+				outline);
+		bresenham(topLeftInt2.x, topLeftInt2.y, topRightInt2.x, topRightInt2.y,
+				outline);
+		bresenham(topRightInt2.x, topRightInt2.y, bottomRightInt2.x,
+				bottomRightInt2.y, outline);
+		bresenham(bottomRightInt2.x, bottomRightInt2.y, bottomLeftInt2.x,
+				bottomLeftInt2.y, outline);
+
+		bresenham(bottomLeftInt2.x, bottomLeftInt2.y, bottomRightInt.x,
+				bottomRightInt.y, outline);
+		bresenham(bottomRightInt.x, bottomRightInt.y, bottomLeftInt.x,
+				bottomLeftInt.y, outline);
+		bresenham(bottomLeftInt.x, bottomLeftInt.y, topLeftInt.x, topLeftInt.y,
+				outline);
+//
+//		cout << "The footplate coordinates: Real[Lx,Ly]=[" << topRight2.x << ","
+//				<< topRight2.y << "], Int[Lx,Ly]=[" << topRightInt2.x << ","
+//				<< topRightInt2.y << "]Real[Rx,Ry]=[" << bottomRight2.x << ","
+//				<< bottomRight2.y << "], Int[Rx,Ry]=[" << bottomRightInt2.x << ","
+//				<< bottomRightInt2.y << "]" << endl;
+#pragma parallel simd for
+		for (int i = 0; i < outline.size(); i++) {
+			IntPoint point = outline[i];
+			//			cout << "Probbing Grid.. X:"<<point.x<<", Y: "<<point.y<<endl;
+			if (point.x < 0 || point.x > dwa_map->getNoOfGrids() || point.y < 0
+					|| point.y > dwa_map->getNoOfGrids()) {
+				continue;
+			}
+			if (this->dwa_map->at(point.x, point.y) > lo_occ_thres) {
+				RealPoint realPoint;
+				dwa_map->mapToReal(point, &realPoint);
+				//Point in local frame:
+				this->dwa_map->globalToBody(currentPose, &realPoint);
+//				cout << "Obstacle in body frame : Realpoint[x=" << realPoint.x
+//						<< ", y=" << realPoint.y << "]" << endl;
+				// find point in body frame;
+				//Check if should stop now
+				if (escapeVelocity.isInSafetyZone(realPoint)) {
+					// Limit turn speed.
+					maxW = 0.2;
+					minW = -0.2;
+
+				}
+				escapeVelocity.updateZones(realPoint);
+
+			}
+		}
+
+	}
+	max_rot_vel = maxW;
+	min_rot_vel = -maxW;
+}
+
 /*
  *  This function normalises s the forward velocity of the robot and supports fast motion.
  *  We want to include angular velocity as well so as to obey the user's commands whilst supporting faster motion.
@@ -496,6 +641,7 @@ concurrent_vector<Speed> DWA::getAdmissibleVelocities(
 		concurrent_vector<Speed> admissibles, float upperbound = M_PI + 1,
 		float lowerbound = -M_PI - 1) {
 	admissibles.clear();
+	this->adjustMaxSpeed();
 // We search for velocities for by keeping a list of radii of curvature.
 #pragma omp parallel for
 	for (int i = 0; i < trajectories.size(); i++) {
@@ -545,7 +691,7 @@ concurrent_vector<Speed> DWA::getAdmissibleVelocities(
 }
 
 DynamicWindow DWA::computeDynamicWindow(DynamicWindow dw) {
-	cout << "odom.v: " << odom.v << ", odom.w: " << odom.w << endl;
+	// cout << "odom.v: " << odom.v << ", odom.w: " << odom.w << endl;
 	dw.upperbound.v = odom.v + acc_lim_v * dt * 10;
 	dw.upperbound.w = odom.w + acc_lim_w * dt * 10;
 	dw.lowerbound.v = odom.v + decc_lim_v * dt * 10;
@@ -565,7 +711,7 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 	admissibles.clear();
 	admissibles = getAdmissibleVelocities(admissibles, upperbound, lowerbound);
 	timer.stop();
-	cout << "[DEBUG] Admissible time:" << timer.getLastDuration() << endl;
+	// cout << "[DEBUG] Admissible time:" << timer.getLastDuration() << endl;
 	bool front = deOscillator.isFront();
 // Check direction of goal is in front or behind.
 	bool zeroVisited = false;	// ensures that we add v=w= 0 only once.
@@ -615,7 +761,7 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 			}
 			upperbound_w = fmin(upperbound_w, max_rot_vel);
 			lowerbound_w = fmax(lowerbound_w, min_rot_vel);
-			float stepw = (upperbound_w - lowerbound_w) / 6;
+			float stepw = (upperbound_w - lowerbound_w) / 4;
 			if (stepw == 0)
 				continue;
 //			cout << "upperbound: " << upperbound << "lowerbound" << lowerbound
@@ -673,7 +819,7 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 			} else {
 				upperbound_v = (upperbound_v > 0.0) ? 0 : upperbound_v;
 			}
-			float step = (upperbound_v - lowerbound_v) / 3;
+			float step = (upperbound_v - lowerbound_v) / 2;
 			if (step == 0)
 				continue;
 			for (float vel = lowerbound_v; vel <= upperbound_v;
@@ -706,7 +852,7 @@ concurrent_vector<Speed> DWA::getResultantVelocities(
 		upperbound_v = fmin(upperbound_v, max_trans_vel);
 		lowerbound_v = fmax(lowerbound_v, min_trans_vel);
 
-		float step = (upperbound_v - lowerbound_v) / 3;
+		float step = (upperbound_v - lowerbound_v) / 2;
 		if (step == 0)
 			continue;
 		for (float vel = lowerbound_v; vel <= upperbound_v;
@@ -814,13 +960,12 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 			upperbound, lowerbound);
 	float maxCost = 0;
 // Put weightings here.
-	float alpha = .000001;		// For heading.
+	float alpha = .0001;		// For heading.
 	float beta = .2;		// For clearance.
 	float gamma = 1;		// For velocity.
 	float final_clearance = 0;
 	cout << "Number of resultant velocities" << resultantVelocities.size()
 			<< endl;
-
 #pragma omp parallel for
 	for (int i = 0; i < resultantVelocities.size(); i++) {
 
@@ -835,13 +980,15 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 
 #ifdef DEBUG
 
+		Pose currentPose;
+		this->getCurrentPose(currentPose);
 		ROS_INFO("Printing out DWA parameters for specific velocity ...");
-		ROS_INFO("RealVel[v = %f, w= %f], heading=%f, clearance=%f, "
-				"velocity = %f, cost = %f, Pose (x: %f, y: %f, th: %f)",
+		ROS_INFO(
+				"Candidate Vel[v = %f, w= %f], heading=%f, clearance=%f, velocity = %f,"
+						"cost = %f, Goal Pose (x: %f, y: %f, th: %f), Current Pose (x: %f, y: %f, th: %f)",
 				realspeed.v, realspeed.w, heading, clearance, velocity, cost,
-				this->dwa_map->getMap().info.origin.position.x,
-				this->dwa_map->getMap().info.origin.position.y,
-				getYaw(this->dwa_map->getMap().info.origin.orientation));
+				goalPose.x, goalPose.y, goalPose.th, currentPose.x,
+				currentPose.y, currentPose.th);
 #endif
 		mylock.lock();
 		if (cost > maxCost) {
@@ -859,7 +1006,7 @@ Speed DWA::computeNextVelocity(Speed chosenSpeed) {
 void DWA::getData() {
 	while (dataflag != this->DATA_COMPLETE && ros::ok()) { // Data bits are arranged n order of testing priority.
 		ros::spinOnce();
-
+		// cout << "Dataflag: " << dataflag << endl;
 	}
 	dataflag = 0;
 
@@ -887,7 +1034,8 @@ void DWA::run() {
 	while (ros::ok()) {
 		timer.start();
 		getData();
-
+		chosenSpeed.v = 0;
+		chosenSpeed.w = 0;
 		chosenSpeed = this->computeNextVelocity(chosenSpeed);
 		timer.stop();
 
@@ -899,16 +1047,16 @@ void DWA::run() {
 			motorcmd.angular.z = chosenSpeed.w;
 		}
 		command_pub.publish(motorcmd);
-
+		ROS_INFO("DWA Max Duration: %d", timer.getMaxDuration());
+		ROS_INFO("DWA Average Duration: %d ", timer.getAveDuration());
+		ROS_INFO("DWA Last Duration: %d ", timer.getLastDuration());
+#pragma omp for
 		for (int i = 0; i < distFromObstacle.size(); i++) {
 			distFromObstacle[i] = Distance(NULLDIST, NULLDIST, NULLDIST);
 		}
 
 		loop_rate.sleep();
 
-		ROS_INFO("DWA Max Duration: %d", timer.getMaxDuration());
-		ROS_INFO("DWA Average Duration: %d ", timer.getAveDuration());
-		ROS_INFO("DWA Last Duration: %d ", timer.getLastDuration());
 	}
 
 }
